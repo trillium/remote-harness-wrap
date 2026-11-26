@@ -10,15 +10,15 @@ Statuses are as of the first commit. Earlier prototypes covered only the cases m
 
 | ID | Assertion | Test | Req | Status |
 | --- | --- | --- | --- | --- |
-| A1 | The harness accepts a wrapper as its shell and calls it with its normal arguments. | Log the wrapper's argv during a real harness session. | yes | partial (argv replayed by hand, no real session) |
-| A2 | A command's stdout, stderr and exit code reach the harness unchanged. | Run commands that print to both streams and exit 0, 1 and 7; compare with a local run. | yes | partial |
-| A3 | The harness's working directory follows `cd` across calls. | `cd sub` in one call, `pwd` in the next. The harness shows the mapped local path. | yes | partial |
-| A4 | The harness's shell snapshot or startup file is applied remotely without copying secrets it should not. | Snapshot with a canary secret: the canary does not appear on the remote. | yes | unproven |
-| A5 | Absolute paths in commands are rewritten between provider and remote forms, in both directions. | Command mentions a provider path; the remote sees the remote path; output paths come back mapped. | yes | partial |
-| A6 | A background process started by a command survives after the command returns. | Start a server with `&`, return, reach it in a later call. | yes | unproven |
-| A7 | Cancelling or timing out a command kills the remote process, not just the local one. | Start `sleep 600`, interrupt, check the remote process list. | yes | unproven |
-| A8 | Parallel commands do not interfere. | 20 concurrent commands with distinct outputs; each returns its own. | yes | unproven |
-| A9 | If the remote is unreachable the command fails loudly. It never runs locally by accident. | Block the network; expect a clear error and no local side effect. | yes | unproven |
+| A1 | The harness accepts a wrapper as its shell and calls it with its normal arguments. | Log the wrapper's argv during a real harness session. | yes | proven (evidence/exec/local-a1.log) |
+| A2 | A command's stdout, stderr and exit code reach the harness unchanged. | Run commands that print to both streams and exit 0, 1 and 7; compare with a local run. | yes | proven (evidence/exec/) |
+| A3 | The harness's working directory follows `cd` across calls. | `cd sub` in one call, `pwd` in the next. The harness shows the mapped local path. | yes | proven (evidence/exec/) |
+| A4 | The harness's shell snapshot or startup file is applied remotely without copying secrets it should not. | Snapshot with a canary secret: the canary does not appear on the remote. | yes | proven (evidence/exec/) |
+| A5 | Absolute paths in commands are rewritten between provider and remote forms, in both directions. | Command mentions a provider path; the remote sees the remote path; output paths come back mapped. | yes | proven (evidence/exec/) |
+| A6 | A background process started by a command survives after the command returns. | Start a server with `&`, return, reach it in a later call. | yes | proven (evidence/exec/) |
+| A7 | Cancelling or timing out a command kills the remote process, not just the local one. | Start `sleep 600`, interrupt, check the remote process list. | yes | proven (evidence/exec/) |
+| A8 | Parallel commands do not interfere. | 20 concurrent commands with distinct outputs; each returns its own. | yes | proven (evidence/exec/) |
+| A9 | If the remote is unreachable the command fails loudly. It never runs locally by accident. | Block the network; expect a clear error and no local side effect. | yes | proven (evidence/exec/) |
 | A10 | Per-command overhead is bounded. | Median added latency over 100 trivial commands is under 300 ms after the first. | no | unproven |
 | A11 | A command that needs a terminal fails clearly or works, and the behavior is documented. | Run an interactive prompt. | no | unproven |
 

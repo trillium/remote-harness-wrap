@@ -1,0 +1,10 @@
+id: a5
+label: remote-linux
+when: 2026-11-26T08:25:27Z
+passes: 5
+fails: 0
+PASS: rewrite call exit 0
+PASS: provider path was not written on the provider
+PASS: remote file is at the remote path
+PASS: output does not contain the remote prefix
+PASS: output contains the provider path

@@ -1,0 +1,27 @@
+-----
+argv: [-c] bytes=18 marker=no sentinel=no
+local_cwd: /private/tmp/rw-exec-local.6hGn8n/a1proj
+target: localhost
+transport: broker
+map: /tmp/rw-exec-local.6hGn8n|/tmp/rw-exec-remote.N55yZm
+-----
+argv: [-c] [-l] bytes=9828 marker=no sentinel=no
+local_cwd: /private/tmp/rw-exec-local.6hGn8n/a1proj
+target: localhost
+transport: broker
+map: /tmp/rw-exec-local.6hGn8n|/tmp/rw-exec-remote.N55yZm
+remote_cwd: /tmp/rw-exec-remote.N55yZm/a1proj
+remote_cwd: /tmp/rw-exec-remote.N55yZm/a1proj
+broker ready
+remote_rc: 0
+source path is not mapped; not copying onto itself: /Users/user/.bashrc
+remote_rc: 0
+-----
+argv: [-c] bytes=420 marker=RW_A1_OK sentinel=yes
+local_cwd: /private/tmp/rw-exec-local.6hGn8n/a1proj
+target: localhost
+transport: broker
+map: /tmp/rw-exec-local.6hGn8n|/tmp/rw-exec-remote.N55yZm
+remote_cwd: /tmp/rw-exec-remote.N55yZm/a1proj
+sentinel written
+remote_rc: 0

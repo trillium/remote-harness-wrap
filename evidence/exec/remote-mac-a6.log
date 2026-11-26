@@ -1,0 +1,9 @@
+id: a6
+label: remote-mac
+when: 2026-11-26T08:27:24Z
+passes: 1
+fails: 0
+oneshot: one ssh per command
+ONESHOT: background server still reachable after the command returned
+broker: detached remote session
+PASS: later command reached the background server

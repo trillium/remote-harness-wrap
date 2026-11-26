@@ -1,0 +1,8 @@
+id: a7
+label: remote-mac
+when: 2026-11-26T08:27:18Z
+passes: 3
+fails: 0
+PASS: remote sleep pid observed
+PASS: wrapper exited after interrupt
+PASS: remote process is gone
