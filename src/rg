@@ -1,0 +1,96 @@
+#!/bin/bash
+# PATH stand-in for a harness search tool.
+# A search whose working directory or argument path sits inside RW_PATH_MAP
+# runs rg on the remote. Every other search stays on the local rg.
+# The log records the decision and the exit code, not file contents.
+set -u
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=path-map.sh
+. "$HERE/path-map.sh"
+
+RW_SSH_TARGET="${RW_SSH_TARGET:-localhost}"
+RW_PATH_MAP="${RW_PATH_MAP:-}"
+RW_RG_LOG="${RW_RG_LOG:-}"
+RW_CONTROL_PATH="${RW_CONTROL_PATH:-/tmp/rw-bd-%C}"
+RW_CONTROL_PERSIST="${RW_CONTROL_PERSIST:-5m}"
+RW_CONNECT_TIMEOUT="${RW_CONNECT_TIMEOUT:-8}"
+
+log() {
+  [[ -n "$RW_RG_LOG" ]] || return 0
+  printf '%s\n' "$*" >>"$RW_RG_LOG" 2>/dev/null || true
+}
+
+local_rg() {
+  local dir="$HERE" newpath="" p
+  local IFS=':'
+  for p in $PATH; do
+    [[ "$p" == "$dir" ]] && continue
+    newpath="${newpath:+$newpath:}$p"
+  done
+  PATH="$newpath" command -v rg
+}
+
+log "-----"
+log "argc=$#"
+path_map_load
+
+pwd_now=$(pwd -P)
+remote_cwd=$(path_map_to_remote "$pwd_now")
+cwd_inside=0
+if [[ "$remote_cwd" != "$pwd_now" ]]; then
+  cwd_inside=1
+fi
+
+outside=0
+inside_path=0
+remote_args=()
+for a in "$@"; do
+  translated=$(path_map_to_remote "$a")
+  if [[ "$a" == /* && "$translated" != "$a" ]]; then
+    inside_path=1
+    a=$translated
+  elif [[ "$a" == /* ]]; then
+    outside=1
+  fi
+  remote_args+=("$a")
+done
+
+forward=0
+case "${1:-}" in
+  --version | --help | -V | -h) forward=0 ;;
+  *)
+    if [[ "$inside_path" -eq 1 || ( "$cwd_inside" -eq 1 && "$outside" -eq 0 ) ]]; then
+      forward=1
+    fi
+    ;;
+esac
+
+if [[ "$forward" -eq 0 ]]; then
+  bin=$(local_rg || true)
+  log "forward=0"
+  if [[ -z "$bin" ]]; then
+    log "rc=127"
+    exit 127
+  fi
+  "$bin" "$@"
+  rc=$?
+  log "rc=${rc}"
+  exit "$rc"
+fi
+
+log "forward=1"
+quoted=$(printf '%q ' "${remote_args[@]}")
+ssh \
+  -o ControlMaster=auto \
+  -o "ControlPersist=${RW_CONTROL_PERSIST}" \
+  -o "ControlPath=${RW_CONTROL_PATH}" \
+  -o BatchMode=yes \
+  -o "ConnectTimeout=${RW_CONNECT_TIMEOUT}" \
+  -o LogLevel=ERROR \
+  -T \
+  "$RW_SSH_TARGET" \
+  "cd $(printf '%q' "$remote_cwd") && rg ${quoted}"
+rc=$?
+log "rc=${rc}"
+exit "$rc"

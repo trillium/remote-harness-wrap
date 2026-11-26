@@ -1,0 +1,10 @@
+id: b2
+label: remote-linux
+when: 2026-11-26T09:35:08Z
+passes: 4
+fails: 0
+plane: ssh-sync
+PASS: push exited 0
+PASS: remote read matches the provider write
+PASS: edit push exited 0
+PASS: remote read matches the provider edit

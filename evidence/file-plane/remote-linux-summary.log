@@ -1,0 +1,12 @@
+label: remote-linux
+plane: ssh-sync
+when: 2026-11-26T09:35:07Z
+b2 PASS
+b3 PASS
+b5 PASS
+b6 PASS
+b4 PASS
+b7 FAIL
+b8 PASS
+b9 PASS
+summary pass=7 fail=1

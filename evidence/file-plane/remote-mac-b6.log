@@ -1,0 +1,18 @@
+id: b6
+label: remote-mac
+when: 2026-11-26T09:44:36Z
+passes: 9
+fails: 0
+plane: ssh-sync
+remote_case=folding
+provider_case=folding
+PASS: case-folding remote keeps one name and the mirror matches
+PASS: attribute push exited 0
+PASS: unicode name round-trips
+PASS: symlink round-trips
+remote_mode_file=0o640 remote_mode_exec=0o755
+PASS: file modes round-trip
+PASS: large file checksum matches
+PASS: version-control push exited 0
+PASS: checkout of the older commit is what the remote has
+PASS: later commit is what the remote has

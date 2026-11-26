@@ -1,0 +1,10 @@
+id: b8
+label: remote-linux
+when: 2026-11-26T09:41:37Z
+passes: 2
+fails: 0
+plane: ssh-sync
+bound_seconds=10
+cut_wait_seconds=1 elapsed=2
+PASS: read ended within 10s of the cut
+PASS: local canary was not rewritten

@@ -1,0 +1,8 @@
+id: d1
+label: remote-linux
+when: 2026-11-26T09:48:31Z
+passes: 2
+fails: 0
+route: dyld
+PASS: forwarded command matches the remote and not this machine
+PASS: forwarder log records the spawn

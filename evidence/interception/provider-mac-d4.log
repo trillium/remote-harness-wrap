@@ -1,0 +1,9 @@
+id: d4
+label: provider-mac
+when: 2026-11-26T09:35:14Z
+passes: 1
+fails: 0
+lima_running=0
+PASS: no guest is running
+assertion_status: unproven
+reason: no virtual machine was required, so guest memory was not measured

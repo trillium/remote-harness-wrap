@@ -1,0 +1,8 @@
+id: b3
+label: remote-mac
+when: 2026-11-26T09:44:31Z
+passes: 1
+fails: 0
+plane: ssh-sync
+n=50 seconds=29 miss_list=0 miss_read=0 first_miss=none
+PASS: 50 creates were listed and read

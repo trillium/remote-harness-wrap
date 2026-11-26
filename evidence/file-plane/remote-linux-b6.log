@@ -1,0 +1,19 @@
+id: b6
+label: remote-linux
+when: 2026-11-26T09:36:23Z
+passes: 9
+fails: 0
+plane: ssh-sync
+remote_case=sensitive
+provider_case_volume=sensitive
+provider_case=sensitive
+PASS: case-sensitive names round-trip
+PASS: attribute push exited 0
+PASS: unicode name round-trips
+PASS: symlink round-trips
+remote_mode_file=0o640 remote_mode_exec=0o755
+PASS: file modes round-trip
+PASS: large file checksum matches
+PASS: version-control push exited 0
+PASS: checkout of the older commit is what the remote has
+PASS: later commit is what the remote has

@@ -1,0 +1,15 @@
+id: d3
+label: provider-mac
+when: 2026-11-26T09:36:35Z
+passes: 4
+fails: 0
+route: classify
+binary=claude kind=mach-o flags=0x10000(runtime) dyld_loaded=no route=CLAUDE_CODE_SHELL
+PASS: claude classified as CLAUDE_CODE_SHELL
+binary=opencode kind=mach-o flags=0x20002(adhoc,linker-signed) dyld_loaded=yes route=dyld
+PASS: opencode classified as dyld
+binary=codex kind=mach-o flags=0x20002(adhoc,linker-signed) dyld_loaded=yes route=dyld
+PASS: codex classified as dyld
+binary=grok kind=mach-o flags=0x10000(runtime) dyld_loaded=no route=no-interception
+PASS: grok classified as no-interception
+assertion_status: proven
