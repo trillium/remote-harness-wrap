@@ -1,0 +1,8 @@
+label: mac-peer
+when: 2026-11-26T10:07:41Z
+e1 PASS
+e2 PASS
+e3 PASS
+e4 PASS
+e5 PASS
+summary pass=5 fail=0

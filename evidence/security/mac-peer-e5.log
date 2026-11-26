@@ -1,0 +1,16 @@
+id: e5
+label: mac-peer
+when: 2026-11-26T10:09:04Z
+passes: 10
+fails: 0
+unauthenticated_session=no exit=255
+PASS: a session does not open with no key
+PASS: ephemeral key installed
+PASS: ephemeral key opened a restricted session before teardown
+PASS: removed key did not open a session
+PASS: private key is gone
+PASS: no export tool left a scratch export
+PASS: scratch path is not mounted on the provider
+PASS: broker directory is gone
+PASS: remote scratch is gone
+PASS: the operator key still connects after teardown

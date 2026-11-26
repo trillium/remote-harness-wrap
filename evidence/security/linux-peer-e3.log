@@ -1,0 +1,13 @@
+id: e3
+label: linux-peer
+when: 2026-11-26T10:09:41Z
+passes: 6
+fails: 0
+password_attempt session=no method=refused password_offered=no exit=255
+PASS: password login did not open a session
+PASS: public target refused before a connection (1s)
+PASS: public target refused before a connection (1s)
+PASS: private target still runs a command
+peer-interfaces peer rfc1918_closed=2 rfc1918_timeout=2 tailscale4_open=1 tailscale6_open=1
+PASS: peer has no public address that accepted a connection
+PASS: connection to a public address did not open
