@@ -1,0 +1,13 @@
+id: d2
+label: remote-linux
+when: 2026-11-26T09:48:32Z
+passes: 6
+fails: 0
+PASS: ssh stays local
+PASS: dyld stays local
+child_comm=ssh
+PASS: the forwarded child is a single ssh
+PASS: ssh has no local child
+PASS: ssh does not carry DYLD_INSERT_LIBRARIES
+loaded_pids=1
+PASS: the forwarder loaded in one process

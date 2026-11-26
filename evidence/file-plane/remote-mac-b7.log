@@ -1,0 +1,14 @@
+id: b7
+label: remote-mac
+when: 2026-11-26T09:45:56Z
+passes: 6
+fails: 0
+plane: ssh-sync
+PASS: mirror does not contain the sibling directory
+PASS: sync refuses a path outside one scratch directory
+PASS: sync refuses a path that climbs out
+auth_method=denied
+PASS: a second key was refused
+PASS: remote uid is not root
+sudo_n=allowed
+PASS: no export lists the scratch directory

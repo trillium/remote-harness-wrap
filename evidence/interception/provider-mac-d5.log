@@ -1,0 +1,10 @@
+id: d5
+label: provider-mac
+when: 2026-11-26T09:48:29Z
+passes: 2
+fails: 0
+lima_running=0
+PASS: no guest is running
+PASS: forwarder ran on this machine with no guest
+assertion_status: partial
+reason: the no-VM forwarder ran; group C harness sessions were not part of this proof

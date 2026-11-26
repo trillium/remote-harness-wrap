@@ -4,7 +4,7 @@ The system is functional when every assertion marked **required** is proven. Eac
 
 Status: `unproven` (no evidence), `partial` (shown in a narrow case, noted), `proven` (evidence recorded), `unsupported` (shown not possible, documented).
 
-Statuses are as of the first commit. Earlier prototypes covered only the cases marked `partial` or `proven`.
+A status below is proven, partial, or unsupported only when the named log shows that result.
 
 ## A. Exec plane: commands run on the remote
 
@@ -24,17 +24,20 @@ Statuses are as of the first commit. Earlier prototypes covered only the cases m
 
 ## B. File plane: files are the remote's files
 
+B2 to B9 were measured by copying one scratch directory with tar over ssh.
+That copy is not a live mount.
+
 | ID | Assertion | Test | Req | Status |
 | --- | --- | --- | --- | --- |
-| B1 | The remote project tree is readable and writable by ordinary unprivileged processes on the provider. | `ls`, `cat`, write a file, without special permissions, on the provider OS in use. | yes | unproven (blocked by OS policy on one tested mount type) |
-| B2 | A file written by the harness's write or edit tool is visible to a remote command immediately. | Write on the provider, `cat` on the remote in the next call. | yes | unproven |
-| B3 | A file created by a remote command is visible to the harness's file tools immediately. | Create on the remote, then read and list on the provider, 50 times, zero misses. | yes | partial (a userspace server missed 22 of 50 listings) |
-| B4 | Content search over the mount returns correct and current results, with and without memory-mapped reads. | Search for a fresh token 50 times in both modes. | yes | partial |
-| B5 | Directory listing and glob match the remote exactly, including new, renamed and deleted entries. | Mutate on the remote, list on the provider, compare. | yes | unproven |
-| B6 | File modes, symlinks, case-sensitive names, unicode names, large files and version-control operations behave correctly. | Run a version-control status, commit and checkout through the mount. | yes | unproven |
-| B7 | The export is limited to one client, one directory, and no root access. | Attempt access from another client and from outside the directory; both fail. | yes | unproven |
-| B8 | Dropping the network gives errors, not a hung harness. | Cut the link mid-read; the call fails within a bounded time. | yes | unproven |
-| B9 | Unmounting and teardown leave nothing mounted, exported or running. | Check mounts, exports and processes afterward. | yes | proven for one prototype |
+| B1 | The remote project tree is readable and writable by ordinary unprivileged processes on the provider. | `ls`, `cat`, write a file, without special permissions, on the provider OS in use. | yes | unsupported (evidence/file-plane/provider-mac-b1.log) |
+| B2 | A file written by the harness's write or edit tool is visible to a remote command immediately. | Write on the provider, `cat` on the remote in the next call. | yes | proven (evidence/file-plane/) |
+| B3 | A file created by a remote command is visible to the harness's file tools immediately. | Create on the remote, then read and list on the provider, 50 times, zero misses. | yes | proven (evidence/file-plane/) |
+| B4 | Content search over the mount returns correct and current results, with and without memory-mapped reads. | Search for a fresh token 50 times in both modes. | yes | proven (evidence/file-plane/) |
+| B5 | Directory listing and glob match the remote exactly, including new, renamed and deleted entries. | Mutate on the remote, list on the provider, compare. | yes | proven (evidence/file-plane/) |
+| B6 | File modes, symlinks, case-sensitive names, unicode names, large files and version-control operations behave correctly. | Run a version-control status, commit and checkout through the mount. | yes | proven (evidence/file-plane/) |
+| B7 | The export is limited to one client, one directory, and no root access. | Attempt access from another client and from outside the directory; both fail. | yes | partial (remote-linux accepts auth method none, so a second key is not a client boundary; remote-mac refuses a second key; evidence/file-plane/) |
+| B8 | Dropping the network gives errors, not a hung harness. | Cut the link mid-read; the call fails within a bounded time. | yes | proven (evidence/file-plane/) |
+| B9 | Unmounting and teardown leave nothing mounted, exported or running. | Check mounts, exports and processes afterward. | yes | proven (evidence/file-plane/) |
 
 ## C. Harness coverage: each tool proven in a real session
 
@@ -56,11 +59,11 @@ Each row needs one real session where the harness, unmodified, performs the acti
 
 | ID | Assertion | Test | Req | Status |
 | --- | --- | --- | --- | --- |
-| D1 | For harnesses that cannot name their shell, command execution is forwarded by interception. | Preload a forwarder; a command prints the remote hostname. | yes | partial (Linux guest, one harness) |
-| D2 | The forwarder never forwards itself, the transport, or the dynamic linker. | Process list shows no recursion. | yes | proven for one prototype |
-| D3 | Signed, hardened or statically linked harness binaries are classified, with the supported route for each. | Table of binaries and results. | yes | partial |
-| D4 | If a virtual machine is required, its memory use is measured and bounded. | Resident memory under 1 GiB while idle and while running a task. | no | unproven |
-| D5 | The no-virtual-machine route is exercised for every harness where it is possible. | Same C-series tests with no guest running. | yes | unproven |
+| D1 | For harnesses that cannot name their shell, command execution is forwarded by interception. | Preload a forwarder; a command prints the remote hostname. | yes | proven (evidence/interception/) |
+| D2 | The forwarder never forwards itself, the transport, or the dynamic linker. | Process list shows no recursion. | yes | proven (evidence/interception/) |
+| D3 | Signed, hardened or statically linked harness binaries are classified, with the supported route for each. | Table of binaries and results. | yes | proven (evidence/interception/provider-mac-d3.log) |
+| D4 | If a virtual machine is required, its memory use is measured and bounded. | Resident memory under 1 GiB while idle and while running a task. | no | unproven (no guest was required, so memory was not measured; evidence/interception/provider-mac-d4.log) |
+| D5 | The no-virtual-machine route is exercised for every harness where it is possible. | Same C-series tests with no guest running. | yes | partial (forwarder ran with no guest; group C sessions were not part of this proof; evidence/interception/provider-mac-d5.log) |
 
 ## E. Security and secrets
 
