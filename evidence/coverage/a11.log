@@ -1,0 +1,13 @@
+id: a11
+when: 2026-11-26T09:55:45Z
+passes: 4
+fails: 0
+pipe_exit: 1
+pipe_stdout: tty_rc:1 read_rc:1 line_len:0 
+pipe_stderr: empty
+PASS: remote command reports that it has no tty
+PASS: read returns non-zero on immediate EOF and does not see the piped line
+PASS: wrapper exits non-zero when read fails
+pty_stdout: pty_status: 256 typed-line tty_rc:1 read_rc:1 line_len:0  
+PASS: a local pty still does not give the remote command a tty
+RESULT: interactive input is not forwarded; tty is absent; read exits 1

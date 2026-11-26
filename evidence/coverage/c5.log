@@ -1,0 +1,15 @@
+id: c5
+when: 2026-11-26T10:02:55Z
+passes: 5
+fails: 0
+opencode: 1.18.4
+model: opencode/big-pickle
+opencode_exit: 0
+PASS: OpenCode invoked the shell wrapper
+PASS: shell command read the remote-only file
+c6_shell: remote-only file visible to the shell
+PASS: free-model turn printed the marker command's output
+PASS: shell printed the remote hostname
+hosts_differ: yes
+PASS: remote marker stayed off the provider
+RESULT: see passes

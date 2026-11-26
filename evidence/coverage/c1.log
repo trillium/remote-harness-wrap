@@ -1,0 +1,19 @@
+id: c1
+when: 2026-11-26T10:02:34Z
+passes: 3
+fails: 0
+claude: 2.1.332 (Claude Code)
+token file: present
+account: second
+PASS: remote marker is absent on the provider
+claude_exit: 1
+auth: 401 invalid
+shell: not-observed
+hosts_differ: not-observed
+marker: not-observed
+The named account refused the session. No further account was tried.
+PASS: remote marker stayed off the provider
+PASS: SessionStart hook ran on the provider
+hook: local
+mcp: not-observed
+RESULT: partial account-refused

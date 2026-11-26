@@ -19,8 +19,8 @@ A status below is proven, partial, or unsupported only when the named log shows 
 | A7 | Cancelling or timing out a command kills the remote process, not just the local one. | Start `sleep 600`, interrupt, check the remote process list. | yes | proven (evidence/exec/) |
 | A8 | Parallel commands do not interfere. | 20 concurrent commands with distinct outputs; each returns its own. | yes | proven (evidence/exec/) |
 | A9 | If the remote is unreachable the command fails loudly. It never runs locally by accident. | Block the network; expect a clear error and no local side effect. | yes | proven (evidence/exec/) |
-| A10 | Per-command overhead is bounded. | Median added latency over 100 trivial commands is under 300 ms after the first. | no | unproven |
-| A11 | A command that needs a terminal fails clearly or works, and the behavior is documented. | Run an interactive prompt. | no | unproven |
+| A10 | Per-command overhead is bounded. | Median added latency over 100 trivial commands is under 300 ms after the first. | no | proven (evidence/coverage/a10.log, median added 299.5 ms) |
+| A11 | A command that needs a terminal fails clearly or works, and the behavior is documented. | Run an interactive prompt. | no | proven (evidence/coverage/a11.log). No remote tty. read exits 1. Input is not forwarded. |
 
 ## B. File plane: files are the remote's files
 
@@ -45,14 +45,14 @@ Each row needs one real session where the harness, unmodified, performs the acti
 
 | ID | Assertion | Req | Status |
 | --- | --- | --- | --- |
-| C1 | Claude Code: shell tool runs on the remote. | yes | unproven |
+| C1 | Claude Code: shell tool runs on the remote. | yes | partial (evidence/coverage/c1.log). Second account returned 401. SessionStart hook ran on the provider. Remote shell was not observed. |
 | C2 | Claude Code: read, write, edit change remote files. | yes | unproven |
 | C3 | Claude Code: glob and search see remote files. | yes | unproven |
-| C4 | Claude Code: the separate persistent shell tool, hooks and local tool servers are either remote or documented as local. | no | unproven |
-| C5 | OpenCode: shell tool runs on the remote. | yes | partial (one free-model turn, command forwarded from a Linux guest) |
-| C6 | OpenCode: file tools see remote files. | yes | unproven |
-| C7 | Codex: shell and file tools. | no | unproven |
-| C8 | Grok: shell and file tools, or documented unsupported with the reason. | no | unproven |
+| C4 | Claude Code: the separate persistent shell tool, hooks and local tool servers are either remote or documented as local. | no | partial (evidence/coverage/c1.log, evidence/coverage/c4.log). SessionStart hook ran on the provider. Persistent shell, Read, and MCP were not observed. |
+| C5 | OpenCode: shell tool runs on the remote. | yes | proven (evidence/coverage/c5.log). Free-model shell printed the remote hostname and a remote-only marker. |
+| C6 | OpenCode: file tools see remote files. | yes | partial (evidence/coverage/c5.log). Shell read a remote-only file. File tools were not exercised. |
+| C7 | Codex: shell and file tools. | no | partial (evidence/coverage/c7.log). Launch reached the usage limit. Shell and file tools were not issued. rw-bash -lc forwards. |
+| C8 | Grok: shell and file tools, or documented unsupported with the reason. | no | unsupported (evidence/coverage/c8.log). The command ran in the in-process static shell on the provider. GROK_SHELL was not executed. |
 | C9 | Any other harness: a documented procedure to test whether it can be wrapped (dynamic or static binary, signed or not, shell setting). | no | unproven |
 
 ## D. Interception without changing the harness

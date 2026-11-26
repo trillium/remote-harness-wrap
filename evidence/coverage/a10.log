@@ -1,0 +1,12 @@
+id: a10
+when: 2026-11-26T09:54:05Z
+passes: 1
+fails: 0
+warmup_ms: 356.0
+median_added_ms: 299.5
+median_wrapper_ms: 302.3
+median_local_ms: 2.8
+samples: 100
+bound_ms: 300
+PASS: median added latency is under 300 ms
+RESULT: see passes

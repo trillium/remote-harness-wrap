@@ -1,0 +1,12 @@
+id: c4
+when: 2026-11-26T10:02:41Z
+passes: 0
+fails: 0
+token file: present
+claude_exit: 1
+auth: 401 invalid
+read: not-observed
+persistent shell: not-observed
+mcp: not-observed
+The named account refused the session. No further account was tried.
+RESULT: partial account-refused
