@@ -1,0 +1,10 @@
+id: e1
+label: linux-peer
+when: 2026-11-26T10:09:12Z
+passes: 4
+fails: 0
+PASS: session command ran on the remote
+PASS: credential value was not in the remote command environment
+PASS: canary value was not printed
+scan files=30 proc=717 hits_scratch=0 hits_broker=0 hits_tmp=0 hits_home=0 hits_proc=0 hits_other=0 complete=1 scope=full-scratch-broker-plus-session-files
+PASS: canary absent from remote files and process environment

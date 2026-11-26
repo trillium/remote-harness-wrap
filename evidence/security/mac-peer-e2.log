@@ -1,0 +1,15 @@
+id: e2
+label: mac-peer
+when: 2026-11-26T10:08:53Z
+passes: 7
+fails: 0
+PASS: startup file still applied ordinary lines
+PASS: startup secret was unset on the remote
+PASS: startup secret was not printed
+scan files=1016 proc=1 hits_scratch=0 hits_broker=0 hits_tmp=0 hits_home=0 hits_proc=0 hits_other=0 complete=1 scope=full-scratch-broker-plus-session-files
+PASS: canary absent from remote files and process environment
+PASS: allowlisted startup secret was visible to that command
+allow-scan scan files=1034 proc=1 hits_scratch=3 hits_broker=0 hits_tmp=0 hits_home=0 hits_proc=0 hits_other=0 complete=1 scope=full-scratch-broker-plus-session-files
+PASS: allowlisted value was observable on the remote before cleanup
+scan files=1015 proc=1 hits_scratch=0 hits_broker=0 hits_tmp=0 hits_home=0 hits_proc=0 hits_other=0 complete=1 scope=full-scratch-broker-plus-session-files
+PASS: canary absent from remote files and process environment

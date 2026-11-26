@@ -69,11 +69,11 @@ Each row needs one real session where the harness, unmodified, performs the acti
 
 | ID | Assertion | Test | Req | Status |
 | --- | --- | --- | --- | --- |
-| E1 | Harness credentials stay on the provider and are never copied to the remote. | Search the remote filesystem and process environment for the token after a session. | yes | unproven |
-| E2 | Provider secrets in shell startup files do not reach the remote unless allowed. | Canary secret in a startup file (see A4). | yes | unproven |
-| E3 | Transport is key-authenticated and limited to the private network. | Attempt a password login and a public-interface connection; both refused. | yes | unproven |
-| E4 | Logs never contain tokens or file contents. | Scan logs after a session. | yes | unproven |
-| E5 | A run can be fully revoked: keys, exports and mounts removed. | Teardown script followed by an access test. | yes | unproven |
+| E1 | Harness credentials stay on the provider and are never copied to the remote. | Search the remote filesystem and process environment for the token after a session. | yes | proven (evidence/security/) |
+| E2 | Provider secrets in shell startup files do not reach the remote unless allowed. | Canary secret in a startup file (see A4). | yes | proven (evidence/security/) |
+| E3 | Transport is key-authenticated and limited to the private network. | Attempt a password login and a public-interface connection; both refused. | yes | proven (evidence/security/) |
+| E4 | Logs never contain tokens or file contents. | Scan logs after a session. | yes | proven (evidence/security/) |
+| E5 | A run can be fully revoked: keys, exports and mounts removed. | Teardown script followed by an access test. | yes | partial (evidence/security/; one peer still accepted a session after the run key was removed) |
 
 ## F. Whole system
 

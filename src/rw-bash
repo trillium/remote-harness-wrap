@@ -27,6 +27,11 @@
 # for the command, not only the local ssh.
 #
 # If ssh to the target fails, the script is not executed anywhere.
+# The ssh client authenticates with a public key only. It does not offer
+# password or keyboard-interactive authentication.
+# The target must resolve to a private address: loopback, link-local,
+# RFC1918, IPv6 unique-local, or the tailscale carrier range. A public
+# address is refused, and the command is not run locally.
 #
 # Env:
 #   RW_SSH_TARGET      ssh destination (default localhost). An ssh config Host.
@@ -79,6 +84,11 @@ SSH_BASE=(
   -o "ControlPersist=${RW_CONTROL_PERSIST}"
   -o "ControlPath=${RW_CONTROL_PATH}"
   -o BatchMode=yes
+  -o PreferredAuthentications=publickey
+  -o PasswordAuthentication=no
+  -o KbdInteractiveAuthentication=no
+  -o PubkeyAuthentication=yes
+  -o NumberOfPasswordPrompts=0
   -o "ConnectTimeout=${RW_CONNECT_TIMEOUT}"
   -o LogLevel=ERROR
 )
@@ -515,6 +525,60 @@ fi
 
 remote_cwd=$(translate_to_remote "$local_cwd")
 log "remote_cwd: ${remote_cwd}"
+
+# Fail closed before any connection. Exit 1 is a public address.
+# Exit 2 is a resolution failure. Neither runs the command locally.
+if ! python3 - "$RW_SSH_TARGET" <<'PY'
+import ipaddress
+import socket
+import subprocess
+import sys
+
+target = sys.argv[1]
+proc = subprocess.run(["ssh", "-G", target], capture_output=True, text=True)
+if proc.returncode != 0:
+    sys.exit(2)
+host = ""
+for line in proc.stdout.splitlines():
+    if line.startswith("hostname "):
+        host = line.split(None, 1)[1].strip()
+        break
+if not host:
+    sys.exit(2)
+try:
+    infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+except socket.gaierror:
+    sys.exit(2)
+allowed_nets = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+    ipaddress.ip_network("169.254.0.0/16"),
+]
+
+def allowed(ip):
+    ip = ip.split("%", 1)[0]
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    if addr.is_loopback or addr.is_link_local:
+        return True
+    return any(addr in net for net in allowed_nets)
+
+seen = False
+for info in infos:
+    seen = True
+    if not allowed(info[4][0]):
+        sys.exit(1)
+sys.exit(0 if seen else 2)
+PY
+then
+  die "refusing target that is not on the private network; command not run locally"
+fi
 
 # The broker submits and waits on one ssh. That ssh is the reachability
 # check. Oneshot still probes first so a dead target fails before any

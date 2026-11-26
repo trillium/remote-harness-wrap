@@ -1,0 +1,11 @@
+id: e4
+label: linux-peer
+when: 2026-11-26T10:09:43Z
+passes: 4
+fails: 0
+PASS: session printed the file body on stdout
+wrapper token_hits=0 file_hits=0 argv_lines=1 bytes=271
+PASS: wrapper log has no credential and no file body
+broker log empty
+PASS: broker log has no credential and no file body
+PASS: credential was not printed by the session
