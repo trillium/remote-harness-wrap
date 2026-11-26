@@ -107,3 +107,17 @@ The forwarder runs on the provider in that same state.
 ```
 RW_SSH_TARGET=<ssh-host> RW_LABEL=provider-mac tests/interception/d5.sh
 ```
+
+## Wrapping another harness
+
+`docs/wrap-a-harness.md` is the procedure.
+`tests/coverage/c9.sh <command-name>...` runs its automatic steps.
+
+## Two sessions on two remotes
+
+```
+tests/whole/f6.sh --target-a <ssh-host> --target-b <ssh-host>
+```
+
+Each session gets its own path map, broker directory and ssh control socket.
+The log is `evidence/whole/f6.log`.

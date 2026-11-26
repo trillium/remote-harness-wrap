@@ -1,0 +1,19 @@
+id: c9
+label: provider-mac
+when: 2026-11-26T20:27:24Z
+passes: 6
+fails: 0
+route: procedure
+harness=claude kind=mach-o link=dynamic signing=0x10000(runtime) shell_names=CLAUDE_CODE_SHELL,CLOUD_SHELL,IS_SHELL,NPM_CONFIG_SCRIPT_SHELL,NPM_CONFIG_SHELL dyld_loaded=no route=shell-setting
+PASS: claude classified as shell-setting
+harness=opencode kind=script-then-opencode.exe link=dynamic signing=0x20002(adhoc,linker-signed) shell_names=ENVIRONMENT_IS_SHELL dyld_loaded=yes route=dyld
+PASS: opencode classified as dyld
+harness=codex kind=mach-o link=dynamic signing=0x20002(adhoc,linker-signed) shell_names=none dyld_loaded=yes route=dyld
+PASS: codex classified as dyld
+harness=grok kind=mach-o link=dynamic signing=0x10000(runtime) shell_names=GROK_SHELL dyld_loaded=no route=no-interception
+PASS: grok classified as no-interception
+harness=pi kind=script-then-node link=dynamic signing=0x10000(runtime) shell_names=none dyld_loaded=yes route=dyld
+PASS: pi classified as dyld
+harness=goose kind=mach-o link=dynamic signing=0x20002(adhoc,linker-signed) shell_names=none dyld_loaded=yes route=dyld
+PASS: goose classified as dyld
+assertion_status: procedure written and run; a live session is still needed per harness (step 5)
