@@ -516,8 +516,13 @@ fi
 remote_cwd=$(translate_to_remote "$local_cwd")
 log "remote_cwd: ${remote_cwd}"
 
-if ! ssh "${SSH_BASE[@]}" -T "$RW_SSH_TARGET" true; then
-  die "ssh to ${RW_SSH_TARGET} failed; command not run locally"
+# The broker submits and waits on one ssh. That ssh is the reachability
+# check. Oneshot still probes first so a dead target fails before any
+# local side effect (A9).
+if [[ "$RW_TRANSPORT" != "broker" ]]; then
+  if ! ssh "${SSH_BASE[@]}" -T "$RW_SSH_TARGET" true; then
+    die "ssh to ${RW_SSH_TARGET} failed; command not run locally"
+  fi
 fi
 
 copy_sources() {
@@ -576,12 +581,32 @@ emit_translated() {
   cat "$err" >&2
 }
 
-broker_alive() {
-  local root="$1" pid
-  pid=$(ssh_quick "cat $(printf '%q' "$root/broker.pid") 2>/dev/null" || true)
+broker_cache_path() {
+  local safe root_key
+  safe=$(printf '%s' "$RW_SSH_TARGET" | tr -c 'A-Za-z0-9._-' '_')
+  root_key=$(printf '%s' "$RW_BROKER_ROOT" | tr -c 'A-Za-z0-9._-' '_')
+  printf '%s' "${TMPDIR:-/tmp}/rw-broker-pid.${safe}.${root_key}"
+}
+
+forget_broker_pid() {
+  rm -f "$(broker_cache_path)"
+}
+
+remember_broker_pid() {
+  local root="$1" pid cache
+  pid=$(ssh_quick "cat $(printf '%q' "$root/broker.pid") 2>/dev/null" 2>/dev/null || true)
   pid=${pid//[!0-9]/}
   [[ -n "$pid" ]] || return 1
-  ssh_quick "kill -0 ${pid} 2>/dev/null"
+  cache=$(broker_cache_path)
+  printf '%s\n' "$pid" >"$cache"
+}
+
+broker_alive() {
+  local root="$1" pid
+  pid=$(ssh_quick "cat $(printf '%q' "$root/broker.pid") 2>/dev/null" 2>/dev/null || true)
+  pid=${pid//[!0-9]/}
+  [[ -n "$pid" ]] || return 1
+  ssh_quick "kill -0 ${pid} 2>/dev/null" 2>/dev/null
 }
 
 install_broker_files() {
@@ -617,7 +642,7 @@ while true; do
       mv "$dir/rc.tmp" "$dir/rc"
     ) &
   done
-  sleep 0.05
+  sleep 0.01
 done
 BROKER
   ssh_quick "cat > $(printf '%q' "$root/launch.pl") && chmod 700 $(printf '%q' "$root/launch.pl")" <<'LAUNCH' \
@@ -639,8 +664,15 @@ LAUNCH
 }
 
 ensure_broker() {
-  local root="$RW_BROKER_ROOT"
+  local root="$RW_BROKER_ROOT" cache
+  cache=$(broker_cache_path)
+  # A warm pid file skips the two ssh liveness probes. The next submit
+  # checks kill -0 and returns 99 when the broker is gone.
+  if [[ -s "$cache" ]]; then
+    return 0
+  fi
   if broker_alive "$root"; then
+    remember_broker_pid "$root" || true
     return 0
   fi
   local safe lock
@@ -648,6 +680,7 @@ ensure_broker() {
   lock="/tmp/rw-exec-broker.${safe}.lock"
   if mkdir "$lock" 2>/dev/null; then
     if broker_alive "$root"; then
+      remember_broker_pid "$root" || true
       rmdir "$lock" 2>/dev/null || true
       return 0
     fi
@@ -658,6 +691,7 @@ ensure_broker() {
     local i
     for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
       if broker_alive "$root"; then
+        remember_broker_pid "$root" || true
         rmdir "$lock" 2>/dev/null || true
         log "broker ready"
         return 0
@@ -670,6 +704,7 @@ ensure_broker() {
   local i
   for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if broker_alive "$root"; then
+      remember_broker_pid "$root" || true
       return 0
     fi
     sleep 0.25
@@ -677,37 +712,49 @@ ensure_broker() {
   die "broker did not become ready; command not run locally"
 }
 
-run_broker() {
-  local root="$RW_BROKER_ROOT" dir frame wrc
-  ensure_broker
-  copy_sources
-  dir="${root}/jobs/${job_id}"
-  JOB_DIR="$dir"
-  ssh_quick "umask 077; mkdir -p -- $(printf '%q' "$dir") $(printf '%q' "$CAP_DIR")" \
-    || die "could not create job directory; command not run locally"
-  {
-    printf 'cd -- %q || exit 1\n' "$remote_cwd"
-    printf '%s\n' "$script"
-  } | ssh_quick "cat > $(printf '%q' "$dir/script") && : > $(printf '%q' "$root/queue/${job_id}.ready")" \
-    || die "could not submit command; command not run locally"
-
+# One ssh submits the job and waits for its rc file. Exit 99 means the
+# cached broker pid is dead, so the caller reinstalls and retries once.
+broker_round() {
+  local root="$1" dir="$2" cache pid frame waiter_err prog delim wrc
+  cache=$(broker_cache_path)
+  pid=$(tr -cd '0-9' <"$cache" 2>/dev/null || true)
+  [[ -n "$pid" ]] || return 99
   frame=$(mktemp "${TMPDIR:-/tmp}/rw-frame.XXXXXX")
   temps+=("$frame")
-  local waiter_err
   waiter_err=$(mktemp "${TMPDIR:-/tmp}/rw-wait.XXXXXX")
   temps+=("$waiter_err")
-
-  ssh "${SSH_BASE[@]}" -T "$RW_SSH_TARGET" "perl - $(printf '%q' "$dir")" >"$frame" 2>"$waiter_err" <<'WAITER' &
+  prog=$(mktemp "${TMPDIR:-/tmp}/rw-broker-round.XXXXXX")
+  temps+=("$prog")
+  delim="RW_EOF_${job_id}_${RANDOM}${RANDOM}"
+  {
+    printf 'set -u\n'
+    printf 'pid=%q\n' "$pid"
+    printf 'root=%q\n' "$root"
+    printf 'dir=%q\n' "$dir"
+    printf 'cap=%q\n' "$CAP_DIR"
+    printf 'job=%q\n' "$job_id"
+    printf 'if ! kill -0 "$pid" 2>/dev/null; then exit 99; fi\n'
+    printf 'umask 077\n'
+    printf 'mkdir -p -- "$dir" "$cap" || exit 98\n'
+    printf 'cat > "$dir/script" <<%s\n' "'${delim}'"
+    printf 'cd -- %q || exit 1\n' "$remote_cwd"
+    printf '%s\n' "$script"
+    printf '%s\n' "$delim"
+    printf ': > "$root/queue/${job}.ready"\n'
+    printf 'i=0\n'
+    printf 'while [[ ! -f "$dir/rc" ]]; do\n'
+    printf '  i=$((i + 1))\n'
+    printf '  if [[ $i -gt 9000 ]]; then\n'
+    printf '    echo "remote command timed out waiting for the broker" >&2\n'
+    printf '    exit 97\n'
+    printf '  fi\n'
+    printf '  sleep 0.01\n'
+    printf 'done\n'
+    cat <<'PERL'
+perl -e '
 use strict;
 use warnings;
 my $dir = $ARGV[0];
-my $deadline = time() + 180;
-until (-f "$dir/rc") {
-  if (time() > $deadline) {
-    die "remote command timed out waiting for the broker\n";
-  }
-  select undef, undef, undef, 0.05;
-}
 open my $rf, "<", "$dir/rc" or die "no rc\n";
 my $rc = do { local $/; <$rf> };
 close $rf;
@@ -727,13 +774,26 @@ binmode STDOUT;
 print pack("N", length($out)), $out;
 print pack("N", length($err)), $err;
 print pack("N", length($rc)), $rc;
-WAITER
+' "$dir" || exit 96
+rm -rf "$dir" "$root/queue/${job}.ready"
+exit 0
+PERL
+  } >"$prog"
+  ssh "${SSH_BASE[@]}" -T "$RW_SSH_TARGET" /bin/bash --noprofile --norc -s \
+    <"$prog" >"$frame" 2>"$waiter_err" &
   WAITER_PID=$!
   wait "$WAITER_PID"
   wrc=$?
   WAITER_PID=""
   if [[ "$RW_SIGNALLED" == 1 ]]; then
     exit 130
+  fi
+  if [[ $wrc -eq 99 ]]; then
+    return 99
+  fi
+  if [[ $wrc -eq 255 ]]; then
+    cat "$waiter_err" >&2
+    die "ssh to ${RW_SSH_TARGET} failed; command not run locally"
   fi
   if [[ $wrc -ne 0 ]]; then
     cat "$waiter_err" >&2
@@ -781,8 +841,28 @@ WAITER
   emit_translated "$out" "$err"
   write_sentinels
   log "remote_rc: ${rc}"
-  ssh_quick "rm -rf $(printf '%q' "$dir") $(printf '%q' "$root/queue/${job_id}.ready")" >/dev/null 2>&1 || true
   exit "$rc"
+}
+
+run_broker() {
+  local root="$RW_BROKER_ROOT" dir round_rc
+  ensure_broker
+  copy_sources
+  dir="${root}/jobs/${job_id}"
+  JOB_DIR="$dir"
+  # broker_round exits on success. A return is only the stale-pid signal
+  # (99). The status has to be read immediately: an if-statement would
+  # replace it with 0 when the condition is false.
+  broker_round "$root" "$dir"
+  round_rc=$?
+  if [[ "$round_rc" -ne 99 ]]; then
+    exit "$round_rc"
+  fi
+  forget_broker_pid
+  ensure_broker
+  broker_round "$root" "$dir"
+  round_rc=$?
+  [[ "$round_rc" -eq 0 ]] || exit "$round_rc"
 }
 
 run_oneshot() {

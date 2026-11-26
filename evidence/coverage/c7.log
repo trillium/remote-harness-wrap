@@ -1,0 +1,16 @@
+id: c7
+when: 2026-11-26T09:56:41Z
+passes: 4
+fails: 0
+codex: codex-cli 0.144.1
+PASS: codex --version printed
+codex_exec_exit: 1
+model: limit exhausted
+PASS: codex exec reached the model and stopped on the limit
+shell_tool: pending
+file_tools: pending
+PASS: launch recorded; shell and file tools were not issued
+lc_exit: 0
+PASS: rw-bash -lc forwards a command to the remote
+command_path: -lc forwarded
+RESULT: see passes

@@ -27,3 +27,8 @@ When it is unset, the runner creates scratch directories and removes them.
 Each assertion is also a script under `tests/exec/`.
 Logs from a run go in `evidence/exec/`.
 A real harness session reads its credential path from `RW_TOKEN_FILE` and does not print that file.
+
+Harness coverage that needs only the exec plane is `tests/coverage/run.sh`.
+Those logs go in `evidence/coverage/`.
+Set `RW_TOKEN_FILE` to the account the Claude session should use.
+The runner does not print that file.
