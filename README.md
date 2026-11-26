@@ -37,28 +37,36 @@ The runner does not print that file.
 
 `unsupported` is a measured result, not a skipped test.
 The claim was tried, ordinary processes could not do it, and the log under `evidence/` records the reason.
-On the provider Mac, B1 is unsupported.
+On the provider Mac, B1 is unsupported for a live mount.
 An NFS mount can be created, and an ordinary read of that mount returns errno 1.
 System Policy denies the read.
-SMB port 445 was closed on the probed hosts, and FUSE-T was not installed.
-The FUSE-T installer needs an administrator, so it was not installed for this proof.
-File tools in the harness (read, write, edit, glob) see the provider copy only.
-They do not see the remote tree through a mount.
+SMB and a FUSE-T sshfs mount are denied the same way: `file-read-data` returns errno 1, including for the harness.
+The supported route is a mirror inside `RW_PATH_MAP`.
+After each wrapped command, `src/rw-bash` pulls the remote tree into the local directory.
+Before the next command, it pushes files the provider wrote or edited.
+Read, write, edit, glob, and search use that directory.
+They do not read a mount.
 Commands still run on the remote when the harness uses `src/rw-bash` or the DYLD forwarder in `src/forwarder-mac.c`.
-A search uses `src/rg`, which runs on the remote when the working directory is inside `RW_PATH_MAP`.
+The `src/rg` wrapper still searches on the remote when the working directory is inside `RW_PATH_MAP`.
 
 ## File plane
 
-`src/rw sync` copies one scratch directory with tar over ssh.
+The supported file route is the rsync barrier in `src/mirror.sh`.
+`src/rw run` pulls the remote project into `--local` before the harness starts.
+`src/rw-bash` pushes provider writes to the remote before each command and pulls the remote tree back after it.
+A transfer lands in a staging directory. Each destination path is replaced only after that copy is complete, so a dropped link leaves the previous file or no file.
+The mirror stays inside `RW_PATH_MAP`.
+
+`src/rw sync` still copies one scratch directory with tar over ssh.
 The remote directory must be `/tmp/rw-bd-*` or `/tmp/rw-pkg-*`.
 `push` replaces the remote directory.
 `pull` replaces the local directory.
-This copy is the plane measured by B2 through B9.
+That copy is the plane measured by B2 through B9.
 It is not a live mount, and it does not make B1 true.
 `src/rw run` starts a command with the path map set.
 A command named `claude` gets `CLAUDE_CODE_SHELL`.
 Any other command gets the DYLD forwarder.
-`src/rw down` removes the scratch directory that `run` created.
+`src/rw down` stops that session and removes the scratch directory that `run` created.
 
 Run the proofs for one ssh target:
 

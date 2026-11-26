@@ -1,0 +1,23 @@
+id: f1
+label: remote-linux
+when: 2026-11-26T10:58:31Z
+passes: 7
+fails: 0
+harness=claude
+checksum_before=5b8214f8f082f3187420b27b4063b9b4f4d9412cd66ea436d6d1966ad582700f
+start_command=rw-run
+session=running-at-stop
+stop_command=rw-down
+pid=stopped
+project=gone
+host_mount=gone
+state=gone
+PASS: the wrapped process is not running after stop
+PASS: stop removed the remote project
+PASS: stop removed the local state
+PASS: stop left nothing mounted
+PASS: remote project directory is gone
+checksum_after=5b8214f8f082f3187420b27b4063b9b4f4d9412cd66ea436d6d1966ad582700f
+PASS: harness checksum is unchanged
+checksum_match=yes
+PASS: one start command created a wrapped session

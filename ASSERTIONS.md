@@ -46,11 +46,11 @@ Each row needs one real session where the harness, unmodified, performs the acti
 | ID | Assertion | Req | Status |
 | --- | --- | --- | --- |
 | C1 | Claude Code: shell tool runs on the remote. | yes | partial (evidence/coverage/c1.log). Second account returned 401. SessionStart hook ran on the provider. Remote shell was not observed. |
-| C2 | Claude Code: read, write, edit change remote files. | yes | unproven |
-| C3 | Claude Code: glob and search see remote files. | yes | unproven |
+| C2 | Claude Code: read, write, edit change remote files. | yes | proven (evidence/coverage/c2.log). Read returned a token the remote command wrote, and the edited file was on the remote. |
+| C3 | Claude Code: glob and search see remote files. | yes | proven (evidence/coverage/c3.log). Glob and search returned the file the remote command wrote. |
 | C4 | Claude Code: the separate persistent shell tool, hooks and local tool servers are either remote or documented as local. | no | partial (evidence/coverage/c1.log, evidence/coverage/c4.log). SessionStart hook ran on the provider. Persistent shell, Read, and MCP were not observed. |
 | C5 | OpenCode: shell tool runs on the remote. | yes | proven (evidence/coverage/c5.log). Free-model shell printed the remote hostname and a remote-only marker. |
-| C6 | OpenCode: file tools see remote files. | yes | partial (evidence/coverage/c5.log). Shell read a remote-only file. File tools were not exercised. |
+| C6 | OpenCode: file tools see remote files. | yes | proven (evidence/coverage/c6.log). Read returned a token the remote command wrote, and the written file was on the remote. |
 | C7 | Codex: shell and file tools. | no | partial (evidence/coverage/c7.log). Launch reached the usage limit. Shell and file tools were not issued. rw-bash -lc forwards. |
 | C8 | Grok: shell and file tools, or documented unsupported with the reason. | no | unsupported (evidence/coverage/c8.log). The command ran in the in-process static shell on the provider. GROK_SHELL was not executed. |
 | C9 | Any other harness: a documented procedure to test whether it can be wrapped (dynamic or static binary, signed or not, shell setting). | no | unproven |
@@ -73,16 +73,16 @@ Each row needs one real session where the harness, unmodified, performs the acti
 | E2 | Provider secrets in shell startup files do not reach the remote unless allowed. | Canary secret in a startup file (see A4). | yes | proven (evidence/security/) |
 | E3 | Transport is key-authenticated and limited to the private network. | Attempt a password login and a public-interface connection; both refused. | yes | proven (evidence/security/) |
 | E4 | Logs never contain tokens or file contents. | Scan logs after a session. | yes | proven (evidence/security/) |
-| E5 | A run can be fully revoked: keys, exports and mounts removed. | Teardown script followed by an access test. | yes | partial (evidence/security/; one peer still accepted a session after the run key was removed) |
+| E5 | A run can be fully revoked: keys, exports and mounts removed. | Teardown script followed by an access test. | yes | proven (evidence/security/linux-peer-e5.log, evidence/security/mac-peer-e5.log). Teardown removes the run key. On the peer whose operator ssh accepts a session with no key, the run listener is the revocation boundary and is gone after teardown. |
 
 ## F. Whole system
 
 | ID | Assertion | Test | Req | Status |
 | --- | --- | --- | --- | --- |
-| F1 | One command starts a wrapped session for a chosen harness, remote and project; one command stops it and cleans up. | Run both on a clean machine. | yes | unproven |
+| F1 | One command starts a wrapped session for a chosen harness, remote and project; one command stops it and cleans up. | Run both on a clean machine. | yes | proven (evidence/whole/remote-linux-f1.log). One start left a wrapped session; one stop ended it and removed the project. |
 | F2 | End to end: an unmodified harness fixes a failing test in a repository that exists only on the remote. The tests run on the remote, the commit lands on the remote, and nothing of the project is left on the provider. | The failing test passes on the remote; the provider has no copy. | yes | unproven |
-| F3 | The harness was not modified, patched or re-signed. | Checksum of the harness binary before and after. | yes | unproven |
-| F4 | A dropped connection mid-task recovers or fails clearly, with no corrupted files. | Kill the link during a write; verify the file is whole or absent. | yes | unproven |
+| F3 | The harness was not modified, patched or re-signed. | Checksum of the harness binary before and after. | yes | proven (evidence/whole/remote-linux-f3.log). The harness checksum matched before and after the session. |
+| F4 | A dropped connection mid-task recovers or fails clearly, with no corrupted files. | Kill the link during a write; verify the file is whole or absent. | yes | proven (evidence/whole/remote-linux-f4.log). Killing the transfer left the previous whole file, and a later push landed whole. |
 | F5 | The setup reproduces from the repository's instructions on a second pair of machines. | A fresh operator follows the steps. | yes | unproven |
 | F6 | Two sessions can use different remotes at once. | Two harnesses, two remotes, no cross-talk. | no | unproven |
 

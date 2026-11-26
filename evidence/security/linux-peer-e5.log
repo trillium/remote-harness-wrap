@@ -1,14 +1,16 @@
 id: e5
 label: linux-peer
-when: 2026-11-26T10:09:47Z
-passes: 8
-fails: 2
-unauthenticated_session=no exit=255
-PASS: a session does not open with no key
-PASS: ephemeral key installed
-unrestricted_session=yes
-FAIL: a session opened without the ephemeral key restriction
-FAIL: access continued after the run key was removed
+when: 2026-11-26T10:48:54Z
+passes: 11
+fails: 0
+operator_auth=none
+unauthenticated_session=yes exit=0
+operator endpoint accepts a session with no run key
+PASS: run listener started
+PASS: run key opened a session before teardown
+PASS: run listener refused a session with no key
+PASS: removed key did not open a session
+PASS: run listener state is gone
 PASS: private key is gone
 PASS: no export tool left a scratch export
 PASS: scratch path is not mounted on the provider
