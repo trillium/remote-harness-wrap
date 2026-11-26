@@ -1,0 +1,9 @@
+id: f3
+label: remote-linux
+when: 2026-11-26T10:58:31Z
+harness: claude
+checksum_before: 5b8214f8f082f3187420b27b4063b9b4f4d9412cd66ea436d6d1966ad582700f
+checksum_after: 5b8214f8f082f3187420b27b4063b9b4f4d9412cd66ea436d6d1966ad582700f
+passes: 1
+fails: 0
+PASS: harness checksum is unchanged

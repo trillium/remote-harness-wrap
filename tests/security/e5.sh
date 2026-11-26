@@ -43,17 +43,31 @@ e5_remove_runtime() {
 
 e5_teardown() {
   e5_restore_server
+  if [[ -n "${RW_RUN_SSHD_STATE:-}" && -f "$RW_RUN_SSHD_STATE" ]]; then
+    RW_RUN_SSHD_STATE="$RW_RUN_SSHD_STATE" "$(exec_root)/src/run-sshd.sh" down >/dev/null 2>&1 || true
+  fi
   e5_remove_runtime
 }
 RW_EXTRA_CLEAN="e5_teardown"
 export RW_EXTRA_CLEAN
 
-nokey_cfg=$(mktemp "${TMPDIR:-/tmp}/rw-e5-nokey.XXXXXX")
-chmod 600 "$nokey_cfg"
-cat >"$nokey_cfg" <<EOF
-Host *
+# Resolve the endpoint the same way for every probe. A config passed with
+# -F hides the operator's HostName, and a failed lookup is not a refusal.
+host=$(ssh -G "$RW_SSH_TARGET" 2>/dev/null | awk '$1=="hostname"{print $2; exit}')
+user=$(ssh -G "$RW_SSH_TARGET" 2>/dev/null | awk '$1=="user"{print $2; exit}')
+if [[ -z "$host" || -z "$user" ]]; then
+  fail "could not resolve the operator endpoint"
+  can_revoke=0
+else
+  nokey_cfg=$(mktemp "${TMPDIR:-/tmp}/rw-e5-nokey.XXXXXX")
+  chmod 600 "$nokey_cfg"
+  cat >"$nokey_cfg" <<EOF
+Host probe
+  HostName ${host}
+  User ${user}
   IdentitiesOnly yes
   IdentityFile /dev/null
+  IdentityAgent none
   PreferredAuthentications publickey
   PubkeyAuthentication yes
   PasswordAuthentication no
@@ -69,20 +83,59 @@ Host *
   HostbasedAuthentication no
   BatchMode yes
 EOF
-nokey_out=$(mktemp "${TMPDIR:-/tmp}/rw-e5-nokey.XXXXXX")
-SSH_AUTH_SOCK='' ssh -F "$nokey_cfg" -o ConnectTimeout=8 -T "$RW_SSH_TARGET" 'printf NOKEY_SESSION\n' >"$nokey_out" 2>"${RW_RAW}/e5-nokey.err"
-nokey_rc=$?
-rm -f "$nokey_cfg"
-if grep -F -q 'NOKEY_SESSION' "$nokey_out"; then
-  note "unauthenticated_session=yes exit=${nokey_rc}"
-  fail "teardown cannot revoke access while a session opens with no key"
-  can_revoke=0
-else
-  note "unauthenticated_session=no exit=${nokey_rc}"
-  pass "a session does not open with no key"
-  can_revoke=1
+  nokey_out=$(mktemp "${TMPDIR:-/tmp}/rw-e5-nokey.XXXXXX")
+  SSH_AUTH_SOCK='' ssh -v -F "$nokey_cfg" -o ConnectTimeout=8 -T probe 'printf NOKEY_SESSION\n' >"$nokey_out" 2>"${RW_RAW}/e5-nokey.err"
+  nokey_rc=$?
+  rm -f "$nokey_cfg"
+  if grep -F -q 'using "none"' "${RW_RAW}/e5-nokey.err"; then
+    note "operator_auth=none"
+  fi
+  if grep -F -q 'NOKEY_SESSION' "$nokey_out"; then
+    note "unauthenticated_session=yes exit=${nokey_rc}"
+    note "operator endpoint accepts a session with no run key"
+    can_revoke=2
+  else
+    note "unauthenticated_session=no exit=${nokey_rc}"
+    pass "a session does not open with no key"
+    can_revoke=1
+  fi
+  rm -f "$nokey_out"
 fi
-rm -f "$nokey_out"
+
+# The operator sshd ignores authorized_keys. Revoke a listener that
+# accepts only the run key, then prove that key can no longer connect.
+if [[ "${can_revoke:-0}" -eq 2 ]]; then
+  run_bin="$(exec_root)/src/run-sshd.sh"
+  RW_RUN_SSHD_STATE="${RW_RAW}/run-sshd.env"
+  export RW_RUN_SSHD_STATE
+  if "$run_bin" up >"${RW_RAW}/run-sshd-up.out" 2>"${RW_RAW}/run-sshd-up.err"; then
+    pass "run listener started"
+  else
+    fail "could not start the run listener"
+  fi
+  if "$run_bin" check >"${RW_RAW}/run-sshd-check.out" 2>"${RW_RAW}/run-sshd-check.err"; then
+    pass "run key opened a session before teardown"
+  else
+    fail "run key did not open a session"
+  fi
+  if "$run_bin" check-nokey >"${RW_RAW}/run-sshd-nokey.out" 2>"${RW_RAW}/run-sshd-nokey.err"; then
+    pass "run listener refused a session with no key"
+  else
+    fail "run listener accepted a session with no key"
+  fi
+  if "$run_bin" down >"${RW_RAW}/run-sshd-down.out" 2>"${RW_RAW}/run-sshd-down.err" \
+    && grep -F -q 'LISTENER=gone' "${RW_RAW}/run-sshd-down.out"; then
+    pass "removed key did not open a session"
+  else
+    fail "access continued after the run key was removed"
+  fi
+  if [[ -f "$RW_RUN_SSHD_STATE" ]]; then
+    fail "run listener state still exists"
+  else
+    pass "run listener state is gone"
+  fi
+  can_revoke=0
+fi
 
 if [[ "$can_revoke" -eq 1 ]]; then
   ssh-keygen -q -t ed25519 -N "" -C "rw-${E5_NONCE}" -f "$E5_KEY"
@@ -129,8 +182,6 @@ PY
   fi
 
   if [[ "$E5_INSTALLED" -eq 1 ]]; then
-    host=$(ssh -G "$RW_SSH_TARGET" 2>/dev/null | awk '$1=="hostname"{print $2; exit}')
-    user=$(ssh -G "$RW_SSH_TARGET" 2>/dev/null | awk '$1=="user"{print $2; exit}')
     key_cfg=$(mktemp "${TMPDIR:-/tmp}/rw-e5-cfg.XXXXXX")
     chmod 600 "$key_cfg"
     cat >"$key_cfg" <<EOF
@@ -139,10 +190,14 @@ Host peer
   User ${user}
   IdentitiesOnly yes
   IdentityFile ${E5_KEY}
+  IdentityAgent none
   PreferredAuthentications publickey
   PubkeyAuthentication yes
   PasswordAuthentication no
+  KbdInteractiveAuthentication no
   NumberOfPasswordPrompts 0
+  GSSAPIAuthentication no
+  HostbasedAuthentication no
   StrictHostKeyChecking yes
   UserKnownHostsFile ${HOME}/.ssh/known_hosts
   GlobalKnownHostsFile /dev/null

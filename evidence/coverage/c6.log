@@ -1,0 +1,10 @@
+id: c6
+when: 2026-11-26T10:54:53Z
+passes: 3
+fails: 0
+opencode: 1.18.4
+model: opencode/big-pickle
+opencode_exit: 0
+PASS: OpenCode read the token the remote command wrote
+PASS: the file OpenCode wrote is on the remote
+PASS: opencode exited 0

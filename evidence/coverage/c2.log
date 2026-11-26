@@ -1,0 +1,11 @@
+id: c2
+when: 2026-11-26T10:54:34Z
+passes: 4
+fails: 0
+claude: 2.1.332 (Claude Code)
+model: haiku
+claude_exit: 0
+PASS: the remote command wrote a file
+PASS: Read returned the token the remote command wrote
+PASS: the edited file is on the remote
+PASS: claude -p exited 0

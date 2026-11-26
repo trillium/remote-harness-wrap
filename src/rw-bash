@@ -68,6 +68,25 @@ RW_CONNECT_TIMEOUT="${RW_CONNECT_TIMEOUT:-8}"
 RW_TRANSPORT="${RW_TRANSPORT:-broker}"
 RW_BROKER_ROOT="${RW_BROKER_ROOT:-/tmp/rw-exec-broker}"
 RW_ALLOW_VARS="${RW_ALLOW_VARS:-}"
+RW_SRC=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=mirror.sh
+. "$RW_SRC/mirror.sh"
+
+# Pull while the command's own files are the remote tree, then write the
+# provider cwd sentinel. A pull after that write would delete the sentinel
+# when the remote tree does not have it yet.
+settle_mirror() {
+  local rc="$1"
+  if ! mirror_pull; then
+    printf 'remote-bash: mirror pull failed\n' >&2
+    if [[ "$rc" -eq 0 ]]; then
+      rc=2
+    fi
+  fi
+  write_sentinels
+  log "remote_rc: ${rc}"
+  RW_SETTLED_RC=$rc
+}
 
 log() {
   [[ -n "$RW_LOG" ]] || return 0
@@ -903,13 +922,13 @@ PERL
   rc=${rc//[!0-9]/}
   [[ -n "$rc" ]] || rc=1
   emit_translated "$out" "$err"
-  write_sentinels
-  log "remote_rc: ${rc}"
-  exit "$rc"
+  settle_mirror "$rc"
+  exit "$RW_SETTLED_RC"
 }
 
 run_broker() {
   local root="$RW_BROKER_ROOT" dir round_rc
+  mirror_push || die "mirror push failed; command not run locally"
   ensure_broker
   copy_sources
   dir="${root}/jobs/${job_id}"
@@ -931,6 +950,7 @@ run_broker() {
 
 run_oneshot() {
   local out err
+  mirror_push || die "mirror push failed; command not run locally"
   out=$(mktemp "${TMPDIR:-/tmp}/rw-out.XXXXXX")
   err=$(mktemp "${TMPDIR:-/tmp}/rw-err.XXXXXX")
   temps+=("$out" "$err")
@@ -951,10 +971,9 @@ run_oneshot() {
     exit 130
   fi
   emit_translated "$out" "$err"
-  write_sentinels
-  log "remote_rc: ${rc}"
   ssh_quick "rm -f $(printf '%q' "$ONESHOT_PIDFILE")" >/dev/null 2>&1 || true
-  exit "$rc"
+  settle_mirror "$rc"
+  exit "$RW_SETTLED_RC"
 }
 
 case "$RW_TRANSPORT" in

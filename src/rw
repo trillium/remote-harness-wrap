@@ -7,12 +7,19 @@
 #
 # run puts src on PATH and exports the path map. A command named claude gets
 # CLAUDE_CODE_SHELL=src/rw-bash. Any other command gets the DYLD forwarder
-# from src/forwarder-mac.c. sync copies one scratch directory with tar over
-# ssh and replaces the destination. down removes a /tmp project this process
-# created and closes the ssh control socket. Nothing is installed.
+# from src/forwarder-mac.c. Before the harness starts, run pulls the remote
+# tree into the local mirror. rw-bash pushes provider writes back before each
+# command and pulls again after it. sync copies one scratch directory with
+# tar over ssh and replaces the destination. down stops the process run
+# started, removes a /tmp project this process created, and closes the ssh
+# control socket. The session runs in its own process group, and down signals
+# that group, so a stop during the mirror pull still ends the session.
+# Nothing is installed.
 set -u
 
 SRC=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=mirror.sh
+. "$SRC/mirror.sh"
 
 usage() {
   cat <<'EOF'
@@ -117,7 +124,22 @@ write_state() {
     printf 'LOCAL=%q\n' "$LOCAL"
     printf 'CREATED_PROJECT=%q\n' "$CREATED_PROJECT"
     printf 'CREATED_LOCAL=%q\n' "$CREATED_LOCAL"
+    printf 'RUNNER=%q\n' "$$"
   } >"$STATE_FILE"
+}
+
+# Leave the caller's process group so down can signal this session alone.
+# A second entry is already the leader. EPERM means this shell already is.
+ensure_session_group() {
+  [[ "${RW_RUN_GROUP:-}" == 1 ]] && return 0
+  export RW_RUN_GROUP=1
+  exec python3 -c 'import errno, os, sys
+try:
+    os.setsid()
+except OSError as err:
+    if err.errno != errno.EPERM:
+        raise
+os.execv(sys.argv[1], sys.argv[1:])' "$0" run "$@"
 }
 
 parse_plane() {
@@ -201,18 +223,20 @@ cmd_sync() {
 }
 
 cmd_run() {
-  local dylib base phys
+  local dylib base phys child rc
+  ensure_session_group "$@"
+  unset RW_RUN_GROUP
   parse_plane "$@"
   [[ ${#CMD[@]} -gt 0 ]] || die "run needs a command after --"
   ensure_dirs
-  write_state
-  sync_pull "$PROJECT" "$LOCAL"
   phys=$(physical "$LOCAL")
   export RW_SSH_TARGET="$REMOTE"
   export RW_PATH_MAP="${phys}|${PROJECT}"
   export RW_GUEST_ROOT="$phys"
   export RW_REMOTE_ROOT="$PROJECT"
   export RW_CONTROL_PATH RW_CONTROL_PERSIST RW_CONNECT_TIMEOUT
+  write_state
+  mirror_pull || die "mirror pull failed"
   export USE_BUILTIN_RIPGREP=0
   export PATH="${SRC}:${PATH}"
   base=$(basename -- "${CMD[0]}")
@@ -229,7 +253,14 @@ cmd_run() {
       ;;
   esac
   cd "$phys" || die "could not enter the local directory"
-  "${CMD[@]}"
+  # Stay in this session's process group. Job control would move the child
+  # into a group that down cannot see until the pid line is written.
+  "${CMD[@]}" &
+  child=$!
+  printf 'PID=%q\n' "$child" >>"$STATE_FILE"
+  wait "$child"
+  rc=$?
+  exit "$rc"
 }
 
 cmd_down() {
@@ -246,7 +277,28 @@ cmd_down() {
   local_dir=${LOCAL:-}
   created_project=${CREATED_PROJECT:-0}
   created_local=${CREATED_LOCAL:-0}
+  pid=${PID:-}
+  runner=${RUNNER:-}
   REMOTE=$remote
+  if [[ -n "$runner" || ( -n "$pid" && "$pid" != "$$" ) ]]; then
+    if [[ -n "$pid" && "$pid" != "$$" && "$pid" != "$runner" ]]; then
+      kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    fi
+    if [[ -n "$runner" && "$runner" != "$$" ]]; then
+      kill -TERM -- "-$runner" 2>/dev/null || kill -TERM "$runner" 2>/dev/null || true
+    fi
+    sleep 0.3
+    if [[ -n "$pid" && "$pid" != "$$" && "$pid" != "$runner" ]]; then
+      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+    fi
+    if [[ -n "$runner" && "$runner" != "$$" ]]; then
+      kill -KILL -- "-$runner" 2>/dev/null || kill -KILL "$runner" 2>/dev/null || true
+    fi
+    printf 'pid=stopped\n'
+  fi
+  if [[ -x "$SRC/run-sshd.sh" && -f "$STATE_DIR/run-sshd.env" ]]; then
+    RW_RUN_SSHD_STATE="$STATE_DIR/run-sshd.env" "$SRC/run-sshd.sh" down || true
+  fi
   if [[ "$created_project" == 1 && -n "$remote" && -n "$project" ]]; then
     assert_project "$project"
     ssh_cmd "rm -rf -- $(printf '%q' "$project")" || true

@@ -1,0 +1,12 @@
+id: f4
+label: remote-linux
+when: 2026-11-26T10:48:40Z
+passes: 4
+fails: 0
+new_bytes=8388608
+rsync_killed=1
+PASS: the transfer was killed while rsync was running
+payload=previous-whole
+PASS: remote file is whole or absent after the dropped link
+PASS: a later push completed
+PASS: the completed push left the whole new file

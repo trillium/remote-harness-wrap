@@ -1,0 +1,11 @@
+id: c3
+when: 2026-11-26T10:55:25Z
+passes: 4
+fails: 0
+claude: 2.1.332 (Claude Code)
+model: haiku
+claude_exit: 0
+PASS: Glob returned the remote filename
+PASS: search returned the token the remote command wrote
+PASS: the searched file is on the remote
+PASS: claude -p exited 0
