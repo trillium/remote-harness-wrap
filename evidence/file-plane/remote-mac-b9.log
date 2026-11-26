@@ -1,0 +1,14 @@
+id: b9
+label: remote-mac
+when: 2026-11-26T09:45:58Z
+passes: 6
+fails: 0
+plane: ssh-sync
+run_rc=0
+PASS: rw run exited 0
+down_rc=0
+PASS: rw down exited 0
+PASS: remote project is gone
+PASS: no rw mount remains
+PASS: remote scratch path is gone
+PASS: mount table has no rw scratch

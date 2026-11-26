@@ -1,0 +1,5 @@
+label: remote-mac
+when: 2026-11-26T09:48:28Z
+d1 PASS
+d2 PASS
+summary pass=2 fail=0

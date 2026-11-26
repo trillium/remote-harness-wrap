@@ -1,0 +1,298 @@
+#!/bin/bash
+# rw — point a command at one ssh host and one directory.
+#
+#   rw run --remote <ssh-host> --project <abs-remote> --local <abs-local> -- <command>
+#   rw sync --remote <ssh-host> --project <abs-remote> --local <abs-local> push|pull
+#   rw down
+#
+# run puts src on PATH and exports the path map. A command named claude gets
+# CLAUDE_CODE_SHELL=src/rw-bash. Any other command gets the DYLD forwarder
+# from src/forwarder-mac.c. sync copies one scratch directory with tar over
+# ssh and replaces the destination. down removes a /tmp project this process
+# created and closes the ssh control socket. Nothing is installed.
+set -u
+
+SRC=$(cd "$(dirname "$0")" && pwd)
+
+usage() {
+  cat <<'EOF'
+rw run --remote <ssh-host> --project <abs-remote> --local <abs-local> -- <command>
+rw sync --remote <ssh-host> --project <abs-remote> --local <abs-local> push|pull
+rw down
+EOF
+}
+
+die() {
+  printf 'rw: %s\n' "$*" >&2
+  exit 2
+}
+
+STATE_DIR="${RW_STATE:-/tmp/rw-bd-state}"
+STATE_FILE="$STATE_DIR/current.env"
+RW_CONTROL_PATH="${RW_CONTROL_PATH:-/tmp/rw-bd-%C}"
+RW_CONTROL_PERSIST="${RW_CONTROL_PERSIST:-5m}"
+RW_CONNECT_TIMEOUT="${RW_CONNECT_TIMEOUT:-8}"
+
+ssh_cmd() {
+  ssh \
+    -o ControlMaster=auto \
+    -o "ControlPersist=${RW_CONTROL_PERSIST}" \
+    -o "ControlPath=${RW_CONTROL_PATH}" \
+    -o BatchMode=yes \
+    -o "ConnectTimeout=${RW_CONNECT_TIMEOUT}" \
+    -o LogLevel=ERROR \
+    -T \
+    "$REMOTE" \
+    "$@"
+}
+
+ssh_exit() {
+  ssh \
+    -o "ControlPath=${RW_CONTROL_PATH}" \
+    -o LogLevel=ERROR \
+    -O exit "$REMOTE" >/dev/null 2>&1 || true
+}
+
+# Only one scratch directory directly under /tmp may be replaced.
+assert_project() {
+  local project="$1" rest
+  case "$project" in
+    *..*) die "project must not contain .." ;;
+  esac
+  case "$project" in
+    /tmp/rw-bd-* | /tmp/rw-pkg-*) ;;
+    *) die "project must be /tmp/rw-bd-* or /tmp/rw-pkg-*" ;;
+  esac
+  rest=${project#/tmp/}
+  case "$rest" in
+    */*) die "project must be one directory under /tmp" ;;
+  esac
+}
+
+assert_local() {
+  local local_dir="$1"
+  case "$local_dir" in
+    /*) ;;
+    *) die "--local must be an absolute path" ;;
+  esac
+  if [[ "$local_dir" == "/" || "$local_dir" == "$HOME" || "$local_dir" == "$HOME"/* ]]; then
+    die "refusing to sync the home directory"
+  fi
+}
+
+sync_push() {
+  local local_dir="$1" project="$2"
+  assert_local "$local_dir"
+  assert_project "$project"
+  [[ -d "$local_dir" ]] || die "local directory does not exist"
+  (
+    set -o pipefail
+    COPYFILE_DISABLE=1 tar --disable-copyfile -C "$local_dir" -cf - . 2>/dev/null \
+      | ssh_cmd "rm -rf -- $(printf '%q' "$project") && mkdir -p -- $(printf '%q' "$project") && tar -C $(printf '%q' "$project") -xf - 2>/dev/null"
+  )
+}
+
+sync_pull() {
+  local project="$1" local_dir="$2"
+  assert_local "$local_dir"
+  assert_project "$project"
+  mkdir -p "$local_dir"
+  find "$local_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  (
+    set -o pipefail
+    ssh_cmd "COPYFILE_DISABLE=1 tar -C $(printf '%q' "$project") -cf - . 2>/dev/null" \
+      | COPYFILE_DISABLE=1 tar --disable-copyfile -C "$local_dir" -xf - 2>/dev/null
+  )
+}
+
+physical() {
+  (cd "$1" && pwd -P)
+}
+
+write_state() {
+  mkdir -p "$STATE_DIR"
+  {
+    printf 'REMOTE=%q\n' "$REMOTE"
+    printf 'PROJECT=%q\n' "$PROJECT"
+    printf 'LOCAL=%q\n' "$LOCAL"
+    printf 'CREATED_PROJECT=%q\n' "$CREATED_PROJECT"
+    printf 'CREATED_LOCAL=%q\n' "$CREATED_LOCAL"
+  } >"$STATE_FILE"
+}
+
+parse_plane() {
+  REMOTE=""
+  PROJECT=""
+  LOCAL=""
+  CMD=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote)
+        REMOTE=${2:-}
+        shift 2
+        ;;
+      --project)
+        PROJECT=${2:-}
+        shift 2
+        ;;
+      --local)
+        LOCAL=${2:-}
+        shift 2
+        ;;
+      --)
+        shift
+        CMD=("$@")
+        break
+        ;;
+      push | pull)
+        CMD=("$1")
+        shift
+        [[ $# -eq 0 ]] || die "unexpected argument $1"
+        break
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown argument $1"
+        ;;
+    esac
+  done
+  [[ -n "$REMOTE" && -n "$PROJECT" && -n "$LOCAL" ]] || die "--remote, --project, and --local are required"
+  assert_project "$PROJECT"
+  assert_local "$LOCAL"
+}
+
+ensure_dirs() {
+  local answer
+  CREATED_LOCAL=0
+  CREATED_PROJECT=0
+  if [[ ! -d "$LOCAL" ]]; then
+    mkdir -p "$LOCAL"
+    CREATED_LOCAL=1
+  fi
+  answer=$(ssh_cmd "if [ -e $(printf '%q' "$PROJECT") ]; then echo exists; else mkdir -p $(printf '%q' "$PROJECT") && echo created; fi")
+  answer=$(printf '%s' "$answer" | tr -d '\r\n')
+  if [[ "$answer" == created ]]; then
+    CREATED_PROJECT=1
+  fi
+}
+
+compile_forwarder() {
+  local out="${RW_BUILD:-/tmp/rw-bd-build}/fwd.dylib"
+  mkdir -p "$(dirname "$out")"
+  if [[ ! -f "$out" || "$SRC/forwarder-mac.c" -nt "$out" ]]; then
+    clang -dynamiclib -fPIC -O2 -Wall -Wextra -Wno-deprecated-declarations \
+      -o "$out" "$SRC/forwarder-mac.c"
+  fi
+  printf '%s\n' "$out"
+}
+
+cmd_sync() {
+  local direction
+  parse_plane "$@"
+  direction=${CMD[0]:-}
+  case "$direction" in
+    push) sync_push "$LOCAL" "$PROJECT" ;;
+    pull) sync_pull "$PROJECT" "$LOCAL" ;;
+    *) die "sync needs push or pull" ;;
+  esac
+}
+
+cmd_run() {
+  local dylib base phys
+  parse_plane "$@"
+  [[ ${#CMD[@]} -gt 0 ]] || die "run needs a command after --"
+  ensure_dirs
+  write_state
+  sync_pull "$PROJECT" "$LOCAL"
+  phys=$(physical "$LOCAL")
+  export RW_SSH_TARGET="$REMOTE"
+  export RW_PATH_MAP="${phys}|${PROJECT}"
+  export RW_GUEST_ROOT="$phys"
+  export RW_REMOTE_ROOT="$PROJECT"
+  export RW_CONTROL_PATH RW_CONTROL_PERSIST RW_CONNECT_TIMEOUT
+  export USE_BUILTIN_RIPGREP=0
+  export PATH="${SRC}:${PATH}"
+  base=$(basename -- "${CMD[0]}")
+  case "$base" in
+    claude)
+      export CLAUDE_CODE_SHELL="${SRC}/rw-bash"
+      unset DYLD_INSERT_LIBRARIES || true
+      ;;
+    *)
+      dylib=$(compile_forwarder)
+      export DYLD_INSERT_LIBRARIES="$dylib"
+      export RW_ENV_MODE="${RW_ENV_MODE:-reduced}"
+      export RW_LOG="${RW_LOG:-$STATE_DIR/forward.log}"
+      ;;
+  esac
+  cd "$phys" || die "could not enter the local directory"
+  "${CMD[@]}"
+}
+
+cmd_down() {
+  local remote="" project="" local_dir="" created_project=0 created_local=0
+  [[ $# -eq 0 ]] || die "down takes no arguments"
+  if [[ ! -f "$STATE_FILE" ]]; then
+    printf 'state=absent\n'
+    return 0
+  fi
+  # shellcheck disable=SC1090
+  . "$STATE_FILE"
+  remote=${REMOTE:-}
+  project=${PROJECT:-}
+  local_dir=${LOCAL:-}
+  created_project=${CREATED_PROJECT:-0}
+  created_local=${CREATED_LOCAL:-0}
+  REMOTE=$remote
+  if [[ "$created_project" == 1 && -n "$remote" && -n "$project" ]]; then
+    assert_project "$project"
+    ssh_cmd "rm -rf -- $(printf '%q' "$project")" || true
+    if ssh_cmd "if [ -e $(printf '%q' "$project") ]; then echo present; else echo gone; fi" | grep -q gone; then
+      printf 'project=gone\n'
+    else
+      printf 'project=present\n'
+      exit 1
+    fi
+  else
+    printf 'project=not-created-by-rw\n'
+  fi
+  if [[ "$created_local" == 1 && -n "$local_dir" ]]; then
+    assert_local "$local_dir"
+    rm -rf "$local_dir"
+  fi
+  if [[ -n "$remote" ]]; then
+    ssh_exit
+  fi
+  rm -rf "$STATE_DIR"
+  if mount | grep -E 'rw-bd|rw-pkg' >/dev/null; then
+    printf 'host_mount=present\n'
+    exit 1
+  fi
+  printf 'host_mount=gone\n'
+  printf 'state=gone\n'
+}
+
+sub=${1:-}
+case "$sub" in
+  run)
+    shift
+    cmd_run "$@"
+    ;;
+  sync)
+    shift
+    cmd_sync "$@"
+    ;;
+  down)
+    shift
+    cmd_down "$@"
+    ;;
+  "" | -h | --help | help)
+    usage
+    ;;
+  *)
+    die "unknown command $sub"
+    ;;
+esac

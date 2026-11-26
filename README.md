@@ -32,3 +32,52 @@ Harness coverage that needs only the exec plane is `tests/coverage/run.sh`.
 Those logs go in `evidence/coverage/`.
 Set `RW_TOKEN_FILE` to the account the Claude session should use.
 The runner does not print that file.
+
+## What unsupported means
+
+`unsupported` is a measured result, not a skipped test.
+The claim was tried, ordinary processes could not do it, and the log under `evidence/` records the reason.
+On the provider Mac, B1 is unsupported.
+An NFS mount can be created, and an ordinary read of that mount returns errno 1.
+System Policy denies the read.
+SMB port 445 was closed on the probed hosts, and FUSE-T was not installed.
+The FUSE-T installer needs an administrator, so it was not installed for this proof.
+File tools in the harness (read, write, edit, glob) see the provider copy only.
+They do not see the remote tree through a mount.
+Commands still run on the remote when the harness uses `src/rw-bash` or the DYLD forwarder in `src/forwarder-mac.c`.
+A search uses `src/rg`, which runs on the remote when the working directory is inside `RW_PATH_MAP`.
+
+## File plane
+
+`src/rw sync` copies one scratch directory with tar over ssh.
+The remote directory must be `/tmp/rw-bd-*` or `/tmp/rw-pkg-*`.
+`push` replaces the remote directory.
+`pull` replaces the local directory.
+This copy is the plane measured by B2 through B9.
+It is not a live mount, and it does not make B1 true.
+`src/rw run` starts a command with the path map set.
+A command named `claude` gets `CLAUDE_CODE_SHELL`.
+Any other command gets the DYLD forwarder.
+`src/rw down` removes the scratch directory that `run` created.
+
+Run the proofs for one ssh target:
+
+```
+RW_SSH_TARGET=<ssh-host> RW_LABEL=remote-linux tests/file-plane/run.sh
+```
+
+B1 measures the provider, not a remote:
+
+```
+tests/file-plane/b1.sh
+```
+
+Logs go in `evidence/file-plane/`.
+The runner removes its scratch directories.
+
+## Interception
+
+Proofs for the DYLD forwarder are under `tests/interception/`.
+Logs go in `evidence/interception/`.
+D4 stays unproven when no virtual machine is required, because guest memory is not measured.
+D5 records a partial result: the forwarder runs with no guest, and the group C harness sessions are out of scope.

@@ -1,0 +1,12 @@
+id: b5
+label: remote-mac
+when: 2026-11-26T09:44:32Z
+passes: 6
+fails: 0
+plane: ssh-sync
+PASS: create
+PASS: rename
+PASS: delete
+PASS: renamed name is present
+PASS: old name is gone
+PASS: deleted name is gone

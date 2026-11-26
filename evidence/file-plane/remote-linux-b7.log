@@ -1,0 +1,14 @@
+id: b7
+label: remote-linux
+when: 2026-11-26T09:44:03Z
+passes: 5
+fails: 1
+plane: ssh-sync
+PASS: mirror does not contain the sibling directory
+PASS: sync refuses a path outside one scratch directory
+PASS: sync refuses a path that climbs out
+auth_method=none
+FAIL: transport accepted method none, so a second key is not a client boundary
+PASS: remote uid is not root
+sudo_n=allowed
+PASS: no export lists the scratch directory

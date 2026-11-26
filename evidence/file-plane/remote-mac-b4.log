@@ -1,0 +1,11 @@
+id: b4
+label: remote-mac
+when: 2026-11-26T09:45:53Z
+passes: 2
+fails: 0
+plane: ssh-sync
+mirror n=50 seconds=58 miss_mmap=0 miss_nommap=0
+PASS: mirror search matched 50 fresh tokens in both modes
+logging-rg n=50 seconds=19 miss_mmap=0 miss_nommap=0
+logging-rg forward_lines=100
+PASS: logging rg matched 50 fresh tokens in both modes
