@@ -1,0 +1,6 @@
+id: a8
+label: local
+when: 2026-11-26T08:25:06Z
+passes: 1
+fails: 0
+PASS: 20 parallel commands each returned their own marker

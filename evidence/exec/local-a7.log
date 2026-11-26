@@ -1,0 +1,8 @@
+id: a7
+label: local
+when: 2026-11-26T08:25:04Z
+passes: 3
+fails: 0
+PASS: remote sleep pid observed
+PASS: wrapper exited after interrupt
+PASS: remote process is gone

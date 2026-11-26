@@ -1,0 +1,12 @@
+id: a4
+label: local
+when: 2026-11-26T08:25:09Z
+passes: 7
+fails: 0
+PASS: denied snapshot command exit 0
+PASS: snapshot still applies non-secret lines
+PASS: canary was not printed
+PASS: canary variable was unset on the remote
+PASS: canary value is absent on the remote
+PASS: allowlisted snapshot command exit 0
+PASS: allowlisted canary reached the remote command

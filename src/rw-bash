@@ -1,0 +1,820 @@
+#!/bin/bash
+# Remote bash for a stock harness.
+#
+# Point CLAUDE_CODE_SHELL at this file. The path contains "bash", which is
+# the name test that harness uses. Accepted argv:
+#   rw-bash -c -l <script>
+#   rw-bash -c <script>
+#   rw-bash -lc <script>
+#   flags before -c, such as --noprofile and --norc, are ignored
+#
+# The script runs on RW_SSH_TARGET inside bash --noprofile --norc.
+# Before it runs, this wrapper:
+#   1. cd's on the remote to the spawn cwd translated through RW_PATH_MAP
+#   2. copies each source '…' or source "…" file that exists locally,
+#      after dropping secret-like assignments that are not allowlisted
+#   3. rewrites mapped path prefixes in the script
+#   4. captures pwd -P >| SENTINEL on the remote and writes the provider
+#      path back to SENTINEL
+# Mapped prefixes in stdout and stderr are rewritten back to provider form.
+#
+# A one-ssh-per-command run SIGHUPs remote background children when the
+# channel closes. The default transport is a broker: one detached remote
+# bash that outlives each command, so a job started with & is still there
+# for a later command. RW_TRANSPORT=oneshot keeps the one-ssh behavior.
+#
+# Cancelling this process (INT, TERM, HUP) kills the remote process group
+# for the command, not only the local ssh.
+#
+# If ssh to the target fails, the script is not executed anywhere.
+#
+# Env:
+#   RW_SSH_TARGET      ssh destination (default localhost). An ssh config Host.
+#   RW_PATH_MAP        local|remote pairs separated by ';' or newlines.
+#                      Longest matching prefix wins. No trailing slash.
+#                      Map a project root, not a short prefix like /tmp.
+#   RW_LOG             append-only log. Unset means quiet.
+#                      The log records argv and actions, not snapshot bodies.
+#   RW_CONTROL_PATH    ssh ControlPath (default /tmp/rw-exec-%C). Keep it short.
+#   RW_CONTROL_PERSIST passed to ssh (default 30m).
+#   RW_CONNECT_TIMEOUT ssh ConnectTimeout seconds (default 8).
+#   RW_TRANSPORT       broker (default) or oneshot.
+#   RW_BROKER_ROOT     remote directory for the broker (default /tmp/rw-exec-broker).
+#   RW_ALLOW_VARS      comma-separated variable names that may cross inside a
+#                      copied snapshot even when the name looks like a secret.
+#                      Secret-like names (SECRET, TOKEN, PASSWORD, CREDENTIAL,
+#                      API_KEY, and names ending in _KEY) are omitted otherwise.
+#                      Assignments are recognized one per line.
+
+set -u
+umask 077
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
+  exit 0
+fi
+
+RW_SSH_TARGET="${RW_SSH_TARGET:-localhost}"
+RW_PATH_MAP="${RW_PATH_MAP:-}"
+RW_LOG="${RW_LOG:-}"
+RW_CONTROL_PATH="${RW_CONTROL_PATH:-/tmp/rw-exec-%C}"
+RW_CONTROL_PERSIST="${RW_CONTROL_PERSIST:-30m}"
+RW_CONNECT_TIMEOUT="${RW_CONNECT_TIMEOUT:-8}"
+RW_TRANSPORT="${RW_TRANSPORT:-broker}"
+RW_BROKER_ROOT="${RW_BROKER_ROOT:-/tmp/rw-exec-broker}"
+RW_ALLOW_VARS="${RW_ALLOW_VARS:-}"
+
+log() {
+  [[ -n "$RW_LOG" ]] || return 0
+  printf '%s\n' "$*" >>"$RW_LOG" 2>/dev/null || true
+}
+
+die() {
+  printf 'remote-bash: %s\n' "$*" >&2
+  exit 2
+}
+
+SSH_BASE=(
+  -o ControlMaster=auto
+  -o "ControlPersist=${RW_CONTROL_PERSIST}"
+  -o "ControlPath=${RW_CONTROL_PATH}"
+  -o BatchMode=yes
+  -o "ConnectTimeout=${RW_CONNECT_TIMEOUT}"
+  -o LogLevel=ERROR
+)
+
+temps=()
+WAITER_PID=""
+SSH_PID=""
+JOB_DIR=""
+ONESHOT_PIDFILE=""
+RW_SIGNALLED=0
+
+cleanup_temps() {
+  if [[ ${#temps[@]} -gt 0 ]]; then
+    rm -f "${temps[@]}"
+  fi
+}
+
+ssh_quick() {
+  ssh "${SSH_BASE[@]}" -T "$RW_SSH_TARGET" "$@"
+}
+
+kill_remote_job() {
+  local pidfile="" pid
+  if [[ -n "$JOB_DIR" ]]; then
+    pidfile="${JOB_DIR}/pid"
+  elif [[ -n "$ONESHOT_PIDFILE" ]]; then
+    pidfile="$ONESHOT_PIDFILE"
+  else
+    return 0
+  fi
+  pid=$(ssh_quick "cat $(printf '%q' "$pidfile") 2>/dev/null" || true)
+  pid=${pid//$'\r'/}
+  pid=${pid//$'\n'/}
+  pid=${pid//[!0-9]/}
+  [[ -n "$pid" ]] || return 0
+  ssh_quick "kill -TERM -${pid} 2>/dev/null || kill -TERM ${pid} 2>/dev/null || true" || true
+  ssh_quick "kill -KILL -${pid} 2>/dev/null || kill -KILL ${pid} 2>/dev/null || true" || true
+}
+
+on_signal() {
+  [[ "$RW_SIGNALLED" == 1 ]] && exit 130
+  RW_SIGNALLED=1
+  if [[ -n "$WAITER_PID" ]]; then
+    kill -TERM "$WAITER_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$SSH_PID" ]]; then
+    kill -TERM "$SSH_PID" 2>/dev/null || true
+  fi
+  kill_remote_job
+  exit 130
+}
+
+on_exit() {
+  cleanup_temps
+}
+
+trap on_exit EXIT
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
+trap 'on_signal HUP' HUP
+
+# --- argv: find -c and take the script; accept a following -l ---
+args=("$@")
+n=$#
+i=0
+have_c=0
+script=""
+while [[ $i -lt $n ]]; do
+  a="${args[$i]}"
+  case "$a" in
+    -c)
+      have_c=1
+      i=$((i + 1))
+      if [[ $i -lt $n && "${args[$i]}" == "-l" ]]; then
+        i=$((i + 1))
+      fi
+      if [[ $i -lt $n ]]; then
+        script="${args[$i]}"
+      fi
+      break
+      ;;
+    -lc | -cl)
+      have_c=1
+      i=$((i + 1))
+      if [[ $i -lt $n ]]; then
+        script="${args[$i]}"
+      fi
+      break
+      ;;
+    *)
+      i=$((i + 1))
+      ;;
+  esac
+done
+
+[[ $have_c -eq 1 ]] || die "expected -c <script>; command not run locally"
+
+local_cwd=$(pwd -P)
+log "-----"
+log "argv: $(printf '[%s] ' "$@")"
+log "local_cwd: ${local_cwd}"
+log "target: ${RW_SSH_TARGET}"
+log "transport: ${RW_TRANSPORT}"
+log "map: ${RW_PATH_MAP}"
+
+# --- path map ---
+MAP_LOCAL=()
+MAP_REMOTE=()
+load_maps() {
+  local map="$RW_PATH_MAP" pair pre rem
+  map=${map//$'\n'/;}
+  local IFS=';'
+  # shellcheck disable=SC2086
+  for pair in $map; do
+    [[ -z "$pair" || "$pair" != *'|'* ]] && continue
+    pre="${pair%%|*}"
+    rem="${pair#*|}"
+    [[ "$pre" != "/" ]] && pre="${pre%/}"
+    [[ "$rem" != "/" ]] && rem="${rem%/}"
+    MAP_LOCAL+=("$pre")
+    MAP_REMOTE+=("$rem")
+  done
+}
+load_maps
+
+# macOS pwd -P rewrites /tmp to /private/tmp. A map written with either
+# spelling has to match the other, or the remote cd lands in the home
+# directory (or a path that only exists on the provider).
+path_aliases() {
+  local p="$1"
+  printf '%s\n' "$p"
+  case "$p" in
+    /private/tmp | /private/tmp/*) printf '%s\n' "/tmp${p#/private/tmp}" ;;
+    /tmp | /tmp/*) printf '%s\n' "/private/tmp${p#/tmp}" ;;
+    /private/var/folders/*) printf '%s\n' "/var/folders${p#/private/var/folders}" ;;
+    /var/folders/*) printf '%s\n' "/private/var/folders${p#/var/folders}" ;;
+  esac
+}
+
+# Print the unmatched suffix when p is pre or a child of pre, treating
+# /tmp and /private/tmp as the same prefix. Return 1 when it does not match.
+suffix_for() {
+  local p="$1" pre="$2" pa prea
+  while IFS= read -r pa; do
+    [[ -n "$pa" ]] || continue
+    while IFS= read -r prea; do
+      [[ -n "$prea" ]] || continue
+      if [[ "$pa" == "$prea" ]]; then
+        printf '\n'
+        return 0
+      fi
+      if [[ "$pa" == "$prea"/* ]]; then
+        printf '%s\n' "${pa#"$prea"}"
+        return 0
+      fi
+    done < <(path_aliases "$pre")
+  done < <(path_aliases "$p")
+  return 1
+}
+
+translate_to_remote() {
+  local p="$1" i best=-1 bestlen=-1 pre nmap
+  nmap=${#MAP_LOCAL[@]}
+  if [[ $nmap -eq 0 ]]; then
+    printf '%s\n' "$p"
+    return 0
+  fi
+  for i in "${!MAP_LOCAL[@]}"; do
+    pre="${MAP_LOCAL[$i]}"
+    if suffix_for "$p" "$pre" >/dev/null; then
+      if [[ ${#pre} -gt $bestlen ]]; then
+        bestlen=${#pre}
+        best=$i
+      fi
+    fi
+  done
+  if [[ $best -ge 0 ]]; then
+    suffix=$(suffix_for "$p" "${MAP_LOCAL[$best]}")
+    printf '%s%s\n' "${MAP_REMOTE[$best]}" "$suffix"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
+translate_to_local() {
+  local p="$1" i best=-1 bestlen=-1 rem nmap
+  nmap=${#MAP_REMOTE[@]}
+  if [[ $nmap -eq 0 ]]; then
+    printf '%s\n' "$p"
+    return 0
+  fi
+  for i in "${!MAP_REMOTE[@]}"; do
+    rem="${MAP_REMOTE[$i]}"
+    if suffix_for "$p" "$rem" >/dev/null; then
+      if [[ ${#rem} -gt $bestlen ]]; then
+        bestlen=${#rem}
+        best=$i
+      fi
+    fi
+  done
+  if [[ $best -ge 0 ]]; then
+    suffix=$(suffix_for "$p" "${MAP_REMOTE[$best]}")
+    printf '%s%s\n' "${MAP_LOCAL[$best]}" "$suffix"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
+# bash 3.2 treats "/" inside ${var//pat/repl} as a delimiter even when the
+# replacement is a path. Walk the string instead.
+replace_literal() {
+  local rest="$1" pre="$2" rem="$3" out=""
+  if [[ -z "$pre" ]]; then
+    printf '%s' "$rest"
+    return 0
+  fi
+  while [[ "$rest" == *"$pre"* ]]; do
+    out="${out}${rest%%"$pre"*}${rem}"
+    rest="${rest#*"$pre"}"
+  done
+  printf '%s' "${out}${rest}"
+}
+
+apply_map_to_script() {
+  local s="$1"
+  local -a from=() to=() idx=()
+  local i pre rem alias n j a b tmp
+  [[ ${#MAP_LOCAL[@]} -eq 0 ]] && {
+    printf '%s' "$s"
+    return 0
+  }
+  for i in "${!MAP_LOCAL[@]}"; do
+    pre="${MAP_LOCAL[$i]}"
+    rem="${MAP_REMOTE[$i]}"
+    while IFS= read -r alias; do
+      [[ -n "$alias" ]] || continue
+      from+=("$alias")
+      to+=("$rem")
+      idx+=("${#idx[@]}")
+    done < <(path_aliases "$pre")
+  done
+  n=${#from[@]}
+  [[ $n -eq 0 ]] && {
+    printf '%s' "$s"
+    return 0
+  }
+  for ((i = 0; i < n; i++)); do
+    for ((j = 0; j < n - i - 1; j++)); do
+      a=${idx[$j]}
+      b=${idx[$((j + 1))]}
+      if [[ ${#from[$a]} -lt ${#from[$b]} ]]; then
+        tmp=${idx[$j]}
+        idx[$j]=${idx[$((j + 1))]}
+        idx[$((j + 1))]=$tmp
+      fi
+    done
+  done
+  for i in "${idx[@]}"; do
+    s=$(replace_literal "$s" "${from[$i]}" "${to[$i]}")
+  done
+  printf '%s' "$s"
+}
+
+translate_file_to_local() {
+  local src="$1"
+  local -a pairs=()
+  local i rem loc alias
+  local nmap=${#MAP_REMOTE[@]}
+  [[ $nmap -eq 0 ]] && return 0
+  [[ -f "$src" ]] || return 0
+  for i in "${!MAP_REMOTE[@]}"; do
+    rem="${MAP_REMOTE[$i]}"
+    loc="${MAP_LOCAL[$i]}"
+    while IFS= read -r alias; do
+      [[ -n "$alias" ]] || continue
+      pairs+=("$alias" "$loc")
+    done < <(path_aliases "$rem")
+  done
+  [[ ${#pairs[@]} -eq 0 ]] && return 0
+  local tmp
+  tmp=$(mktemp "${TMPDIR:-/tmp}/rw-tr.XXXXXX")
+  temps+=("$tmp")
+  {
+    local p
+    for p in "${pairs[@]}"; do
+      printf '%s\0' "$p"
+    done
+  } >"$tmp"
+  perl -e '
+    use strict;
+    use warnings;
+    my ($path, $pairfile) = @ARGV;
+    open my $pf, "<:raw", $pairfile or die $!;
+    local $/ = "\0";
+    my @items = <$pf>;
+    close $pf;
+    s/\0\z// for @items;
+    my @idx;
+    my @from;
+    my @to;
+    for (my $i = 0; $i + 1 < @items; $i += 2) {
+      next if $items[$i] eq "";
+      push @from, $items[$i];
+      push @to, $items[$i + 1];
+      push @idx, $#from;
+    }
+    @idx = sort { length($from[$b]) <=> length($from[$a]) } @idx;
+    open my $fh, "<:raw", $path or die $!;
+    local $/;
+    my $data = <$fh>;
+    close $fh;
+    $data = "" unless defined $data;
+    for my $i (@idx) {
+      my $from = $from[$i];
+      my $to = $to[$i];
+      my $q = quotemeta($from);
+      $data =~ s/$q/$to/g;
+    }
+    open my $oh, ">:raw", $path or die $!;
+    print $oh $data;
+    close $oh;
+  ' "$src" "$tmp"
+}
+
+# --- snapshot allowlist ---
+name_is_denied() {
+  local name="$1" allow a
+  allow="$RW_ALLOW_VARS"
+  local IFS=','
+  # shellcheck disable=SC2086
+  for a in $allow; do
+    a="${a#"${a%%[![:space:]]*}"}"
+    a="${a%"${a##*[![:space:]]}"}"
+    [[ -n "$a" && "$a" == "$name" ]] && return 1
+  done
+  case "$name" in
+    *SECRET* | *TOKEN* | *PASSWORD* | *PASSWD* | *CREDENTIAL* | *API_KEY* | *APIKEY* | *PRIVATE_KEY* | *_KEY)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+assignment_name() {
+  local line="$1"
+  if [[ "$line" =~ ^(export[[:space:]]+|declare[[:space:]]+-x[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+    printf '%s\n' "${BASH_REMATCH[2]}"
+    return 0
+  fi
+  return 1
+}
+
+filter_snapshot() {
+  local src="$1" dest="$2" line name
+  : >"$dest"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    name=""
+    if name=$(assignment_name "$line"); then
+      if name_is_denied "$name"; then
+        printf '# rw-bash: omitted %s\n' "$name" >>"$dest"
+        log "omitted assignment ${name}"
+        continue
+      fi
+    fi
+    printf '%s\n' "$line" >>"$dest"
+  done <"$src"
+}
+
+# --- snapshot sources, from the original script, before rewrite ---
+original="$script"
+SOURCE_PATHS=()
+collect_quoted_sources() {
+  local s="$1" before clause path
+  while [[ "$s" =~ source[[:space:]]+\'([^\']+)\' ]]; do
+    path="${BASH_REMATCH[1]}"
+    SOURCE_PATHS+=("$path")
+    clause="source '${path}'"
+    before="$s"
+    s="${s/"$clause"/}"
+    [[ "$s" == "$before" ]] && break
+  done
+  s="$1"
+  while [[ "$s" =~ source[[:space:]]+\"([^\"]+)\" ]]; do
+    path="${BASH_REMATCH[1]}"
+    SOURCE_PATHS+=("$path")
+    clause="source \"${path}\""
+    before="$s"
+    s="${s/"$clause"/}"
+    [[ "$s" == "$before" ]] && break
+  done
+}
+collect_quoted_sources "$original"
+
+# --- pull cwd sentinels out before the prefix rewrite ---
+SENT_LOCAL=()
+SENT_TOKEN=()
+sent_n=0
+while true; do
+  raw=""
+  if [[ "$script" =~ pwd\ -P\ \>\|[[:space:]]*\'([^\']+)\' ]]; then
+    raw="${BASH_REMATCH[0]}"
+    path="${BASH_REMATCH[1]}"
+  elif [[ "$script" =~ pwd\ -P\ \>\|[[:space:]]*\"([^\"]+)\" ]]; then
+    raw="${BASH_REMATCH[0]}"
+    path="${BASH_REMATCH[1]}"
+  elif [[ "$script" =~ pwd\ -P\ \>\|[[:space:]]*([^[:space:]\;\&\|]+) ]]; then
+    raw="${BASH_REMATCH[0]}"
+    path="${BASH_REMATCH[1]}"
+  else
+    break
+  fi
+  sent_n=$((sent_n + 1))
+  token="__RW_SENTINEL_${sent_n}__"
+  SENT_LOCAL+=("$path")
+  SENT_TOKEN+=("$token")
+  before="$script"
+  script=$(replace_literal "$script" "$raw" "$token")
+  [[ "$script" == "$before" ]] && die "sentinel rewrite made no progress; command not run locally"
+done
+
+script=$(apply_map_to_script "$script")
+
+job_id="j$$-${RANDOM}"
+CAP_DIR="${RW_BROKER_ROOT}/cwd"
+SENT_CAP=()
+if [[ $sent_n -gt 0 ]]; then
+  for ((i = 0; i < sent_n; i++)); do
+    cap="${CAP_DIR}/${job_id}-${i}"
+    SENT_CAP+=("$cap")
+    token="${SENT_TOKEN[$i]}"
+    script=$(replace_literal "$script" "$token" "pwd -P > ${cap}")
+  done
+fi
+
+remote_cwd=$(translate_to_remote "$local_cwd")
+log "remote_cwd: ${remote_cwd}"
+
+if ! ssh "${SSH_BASE[@]}" -T "$RW_SSH_TARGET" true; then
+  die "ssh to ${RW_SSH_TARGET} failed; command not run locally"
+fi
+
+copy_sources() {
+  local src dest parent filtered
+  [[ ${#SOURCE_PATHS[@]} -gt 0 ]] || return 0
+  for src in "${SOURCE_PATHS[@]}"; do
+    if [[ ! -f "$src" ]]; then
+      log "source not on provider, leave as written: ${src}"
+      continue
+    fi
+    dest=$(translate_to_remote "$src")
+    if [[ "$src" == "$dest" ]]; then
+      log "source path is not mapped; not copying onto itself: ${src}"
+      continue
+    fi
+    parent=$(dirname "$dest")
+    filtered=$(mktemp "${TMPDIR:-/tmp}/rw-snap.XXXXXX")
+    temps+=("$filtered")
+    filter_snapshot "$src" "$filtered"
+    # Refuse to stream a denied value. The filter already dropped the line.
+    ssh_quick "umask 077; mkdir -p -- $(printf '%q' "$parent") && cat > $(printf '%q' "$dest")" <"$filtered" \
+      || die "copy of startup file failed; command not run locally"
+    log "copied filtered source to remote path"
+  done
+}
+
+write_sentinels() {
+  local i cap local_sent remote_pwd local_pwd parent
+  [[ $sent_n -gt 0 ]] || return 0
+  for ((i = 0; i < sent_n; i++)); do
+    cap="${SENT_CAP[$i]}"
+    local_sent="${SENT_LOCAL[$i]}"
+    if ! remote_pwd=$(ssh_quick "cat $(printf '%q' "$cap")" 2>/dev/null); then
+      log "sentinel capture missing (local ${local_sent})"
+      ssh_quick "rm -f $(printf '%q' "$cap")" >/dev/null 2>&1 || true
+      continue
+    fi
+    remote_pwd=${remote_pwd//$'\r'/}
+    remote_pwd=${remote_pwd%$'\n'}
+    local_pwd=$(translate_to_local "$remote_pwd")
+    parent=$(dirname "$local_sent")
+    if [[ -n "$parent" && "$parent" != "." ]]; then
+      mkdir -p -- "$parent" 2>/dev/null || true
+    fi
+    printf '%s\n' "$local_pwd" >"$local_sent" || log "failed to write sentinel ${local_sent}"
+    log "sentinel written"
+    ssh_quick "rm -f $(printf '%q' "$cap")" >/dev/null 2>&1 || true
+  done
+}
+
+emit_translated() {
+  local out="$1" err="$2"
+  translate_file_to_local "$out"
+  translate_file_to_local "$err"
+  cat "$out"
+  cat "$err" >&2
+}
+
+broker_alive() {
+  local root="$1" pid
+  pid=$(ssh_quick "cat $(printf '%q' "$root/broker.pid") 2>/dev/null" || true)
+  pid=${pid//[!0-9]/}
+  [[ -n "$pid" ]] || return 1
+  ssh_quick "kill -0 ${pid} 2>/dev/null"
+}
+
+install_broker_files() {
+  local root="$1"
+  ssh_quick "umask 077; mkdir -p -- $(printf '%q' "$root/queue") $(printf '%q' "$root/jobs") $(printf '%q' "$root/cwd")" \
+    || die "could not create broker directory; command not run locally"
+  ssh_quick "cat > $(printf '%q' "$root/broker.sh") && chmod 700 $(printf '%q' "$root/broker.sh")" <<'BROKER' \
+    || die "could not install broker; command not run locally"
+#!/bin/bash
+# Detached command broker. One process per target. Jobs are not children
+# of the per-command ssh session, so a background job survives that session.
+set -u
+root="$1"
+echo $$ > "$root/broker.pid"
+while true; do
+  shopt -s nullglob
+  for ready in "$root/queue"/*.ready; do
+    id=$(basename "$ready" .ready)
+    rm -f "$ready"
+    dir="$root/jobs/$id"
+    (
+      perl -e '
+        use POSIX qw(setsid);
+        setsid();
+        open my $fh, ">", $ARGV[0] or die $!;
+        print $fh $$;
+        close $fh;
+        open STDIN, "<", "/dev/null";
+        exec "/bin/bash", "--noprofile", "--norc", $ARGV[1];
+      ' "$dir/pid" "$dir/script" >"$dir/stdout" 2>"$dir/stderr"
+      rc=$?
+      printf '%s\n' "$rc" > "$dir/rc.tmp"
+      mv "$dir/rc.tmp" "$dir/rc"
+    ) &
+  done
+  sleep 0.05
+done
+BROKER
+  ssh_quick "cat > $(printf '%q' "$root/launch.pl") && chmod 700 $(printf '%q' "$root/launch.pl")" <<'LAUNCH' \
+    || die "could not install broker launcher; command not run locally"
+use POSIX qw(setsid);
+my $script = $ARGV[0];
+my $root = $ARGV[1];
+my $log = $ARGV[2];
+my $pid = fork();
+die "fork failed\n" unless defined $pid;
+if ($pid) { exit 0; }
+setsid();
+chdir("/");
+open STDIN, "<", "/dev/null";
+open STDOUT, ">>", $log;
+open STDERR, ">>&STDOUT";
+exec "/bin/bash", "--noprofile", "--norc", $script, $root;
+LAUNCH
+}
+
+ensure_broker() {
+  local root="$RW_BROKER_ROOT"
+  if broker_alive "$root"; then
+    return 0
+  fi
+  local safe lock
+  safe=$(printf '%s' "$RW_SSH_TARGET" | tr -c 'A-Za-z0-9._-' '_')
+  lock="/tmp/rw-exec-broker.${safe}.lock"
+  if mkdir "$lock" 2>/dev/null; then
+    if broker_alive "$root"; then
+      rmdir "$lock" 2>/dev/null || true
+      return 0
+    fi
+    ssh_quick "if [[ -f $(printf '%q' "$root/broker.pid") ]]; then kill \$(cat $(printf '%q' "$root/broker.pid")) 2>/dev/null || true; fi; rm -rf $(printf '%q' "$root")" || true
+    install_broker_files "$root"
+    ssh_quick "perl $(printf '%q' "$root/launch.pl") $(printf '%q' "$root/broker.sh") $(printf '%q' "$root") $(printf '%q' "$root/broker.log")" \
+      || { rmdir "$lock" 2>/dev/null || true; die "broker launch failed; command not run locally"; }
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+      if broker_alive "$root"; then
+        rmdir "$lock" 2>/dev/null || true
+        log "broker ready"
+        return 0
+      fi
+      sleep 0.25
+    done
+    rmdir "$lock" 2>/dev/null || true
+    die "broker did not become ready; command not run locally"
+  fi
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if broker_alive "$root"; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  die "broker did not become ready; command not run locally"
+}
+
+run_broker() {
+  local root="$RW_BROKER_ROOT" dir frame wrc
+  ensure_broker
+  copy_sources
+  dir="${root}/jobs/${job_id}"
+  JOB_DIR="$dir"
+  ssh_quick "umask 077; mkdir -p -- $(printf '%q' "$dir") $(printf '%q' "$CAP_DIR")" \
+    || die "could not create job directory; command not run locally"
+  {
+    printf 'cd -- %q || exit 1\n' "$remote_cwd"
+    printf '%s\n' "$script"
+  } | ssh_quick "cat > $(printf '%q' "$dir/script") && : > $(printf '%q' "$root/queue/${job_id}.ready")" \
+    || die "could not submit command; command not run locally"
+
+  frame=$(mktemp "${TMPDIR:-/tmp}/rw-frame.XXXXXX")
+  temps+=("$frame")
+  local waiter_err
+  waiter_err=$(mktemp "${TMPDIR:-/tmp}/rw-wait.XXXXXX")
+  temps+=("$waiter_err")
+
+  ssh "${SSH_BASE[@]}" -T "$RW_SSH_TARGET" "perl - $(printf '%q' "$dir")" >"$frame" 2>"$waiter_err" <<'WAITER' &
+use strict;
+use warnings;
+my $dir = $ARGV[0];
+my $deadline = time() + 180;
+until (-f "$dir/rc") {
+  if (time() > $deadline) {
+    die "remote command timed out waiting for the broker\n";
+  }
+  select undef, undef, undef, 0.05;
+}
+open my $rf, "<", "$dir/rc" or die "no rc\n";
+my $rc = do { local $/; <$rf> };
+close $rf;
+$rc = "" unless defined $rc;
+$rc =~ s/\s+\z//;
+sub slurp {
+  my ($p) = @_;
+  open my $fh, "<:raw", $p or return "";
+  local $/;
+  my $d = <$fh>;
+  close $fh;
+  return defined $d ? $d : "";
+}
+my $out = slurp("$dir/stdout");
+my $err = slurp("$dir/stderr");
+binmode STDOUT;
+print pack("N", length($out)), $out;
+print pack("N", length($err)), $err;
+print pack("N", length($rc)), $rc;
+WAITER
+  WAITER_PID=$!
+  wait "$WAITER_PID"
+  wrc=$?
+  WAITER_PID=""
+  if [[ "$RW_SIGNALLED" == 1 ]]; then
+    exit 130
+  fi
+  if [[ $wrc -ne 0 ]]; then
+    cat "$waiter_err" >&2
+    die "remote command did not finish (ssh status ${wrc}); command not run locally"
+  fi
+
+  local out err rc
+  out=$(mktemp "${TMPDIR:-/tmp}/rw-out.XXXXXX")
+  err=$(mktemp "${TMPDIR:-/tmp}/rw-err.XXXXXX")
+  temps+=("$out" "$err")
+  perl -e '
+    use strict;
+    use warnings;
+    my ($frame, $out, $err, $rcpath) = @ARGV;
+    open my $fh, "<:raw", $frame or die $!;
+    local $/;
+    my $data = <$fh>;
+    close $fh;
+    $data = "" unless defined $data;
+    sub take {
+      my ($buf) = @_;
+      die "short frame\n" if length($$buf) < 4;
+      my $n = unpack("N", $$buf);
+      substr($$buf, 0, 4, "");
+      die "short frame\n" if length($$buf) < $n;
+      my $chunk = substr($$buf, 0, $n, "");
+      return $chunk;
+    }
+    my $o = take(\$data);
+    my $e = take(\$data);
+    my $r = take(\$data);
+    open my $oh, ">:raw", $out or die $!;
+    print $oh $o;
+    close $oh;
+    open my $eh, ">:raw", $err or die $!;
+    print $eh $e;
+    close $eh;
+    open my $rh, ">", $rcpath or die $!;
+    print $rh $r;
+    close $rh;
+  ' "$frame" "$out" "$err" "${frame}.rc" || die "could not read remote output; command not run locally"
+  rc=$(cat "${frame}.rc")
+  rc=${rc//[!0-9]/}
+  [[ -n "$rc" ]] || rc=1
+  emit_translated "$out" "$err"
+  write_sentinels
+  log "remote_rc: ${rc}"
+  ssh_quick "rm -rf $(printf '%q' "$dir") $(printf '%q' "$root/queue/${job_id}.ready")" >/dev/null 2>&1 || true
+  exit "$rc"
+}
+
+run_oneshot() {
+  local out err
+  out=$(mktemp "${TMPDIR:-/tmp}/rw-out.XXXXXX")
+  err=$(mktemp "${TMPDIR:-/tmp}/rw-err.XXXXXX")
+  temps+=("$out" "$err")
+  ONESHOT_PIDFILE="${RW_BROKER_ROOT}/oneshot-${job_id}.pid"
+  ssh_quick "umask 077; mkdir -p -- $(printf '%q' "$RW_BROKER_ROOT") $(printf '%q' "$CAP_DIR")" \
+    || die "could not prepare oneshot directory; command not run locally"
+  copy_sources
+  {
+    printf 'echo $$ > %q\n' "$ONESHOT_PIDFILE"
+    printf 'cd -- %q || exit 1\n' "$remote_cwd"
+    printf '%s\n' "$script"
+  } | ssh "${SSH_BASE[@]}" -T "$RW_SSH_TARGET" "/bin/bash --noprofile --norc -s" >"$out" 2>"$err" &
+  SSH_PID=$!
+  wait "$SSH_PID"
+  local rc=$?
+  SSH_PID=""
+  if [[ "$RW_SIGNALLED" == 1 ]]; then
+    exit 130
+  fi
+  emit_translated "$out" "$err"
+  write_sentinels
+  log "remote_rc: ${rc}"
+  ssh_quick "rm -f $(printf '%q' "$ONESHOT_PIDFILE")" >/dev/null 2>&1 || true
+  exit "$rc"
+}
+
+case "$RW_TRANSPORT" in
+  broker) run_broker ;;
+  oneshot) run_oneshot ;;
+  *) die "unknown RW_TRANSPORT ${RW_TRANSPORT}; command not run locally" ;;
+esac

@@ -1,0 +1,8 @@
+id: a9
+label: remote-mac
+when: 2026-11-26T08:27:17Z
+passes: 3
+fails: 0
+PASS: unreachable target exits non-zero (2)
+PASS: stderr names the failure and says the command was not run locally
+PASS: no provider side effect

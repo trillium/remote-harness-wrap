@@ -1,0 +1,10 @@
+id: a3
+label: local
+when: 2026-11-26T08:25:02Z
+passes: 5
+fails: 0
+PASS: cd call exit 0
+PASS: sentinel after cd is the mapped provider path
+PASS: second call exit 0
+PASS: next pwd shows the mapped provider path
+PASS: second sentinel is the mapped provider path

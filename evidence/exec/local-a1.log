@@ -1,0 +1,14 @@
+id: a1
+label: local
+when: 2026-11-26T08:24:59Z
+passes: 5
+fails: 0
+claude: 2.1.332 (Claude Code)
+token file: present
+claude_exit: 0
+PASS: wrapper argv log contains -c
+PASS: wrapper argv log shows the harness login form
+PASS: real session ran the marker command
+PASS: claude -p exited 0
+PASS: credential material was not in the remote scratch
+RESULT: see passes
