@@ -1,0 +1,12 @@
+id: c4
+when: 2026-11-26T11:34:04Z
+passes: 3
+fails: 0
+token file: present
+claude_exit: 0
+PASS: Read saw the provider-only file
+read: local
+PASS: Read did not see the remote-only file
+read_remote: absent
+PASS: Read reported the remote-only file missing
+RESULT: see passes

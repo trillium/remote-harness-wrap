@@ -1,12 +1,16 @@
 id: c4
-when: 2026-11-26T11:34:04Z
-passes: 3
+when: 2026-11-26T20:23:08Z
+passes: 2
 fails: 0
-token file: present
-claude_exit: 0
-PASS: Read saw the provider-only file
-read: local
-PASS: Read did not see the remote-only file
-read_remote: absent
-PASS: Read reported the remote-only file missing
-RESULT: see passes
+claude: 2.1.332 (Claude Code)
+credential: existing provider login
+claude_exit: 1
+session: refused by the account before any tool call
+PASS: SessionStart hook ran on the provider
+hook: local
+PASS: MCP server process started on the provider
+mcp: local (started; no tool call issued)
+persistent shell: not-observed
+mcp tool call: not-observed
+The account refused the session. No other account was tried.
+RESULT: partial account-refused

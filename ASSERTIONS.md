@@ -48,12 +48,12 @@ Each row needs one real session where the harness, unmodified, performs the acti
 | C1 | Claude Code: shell tool runs on the remote. | yes | proven (evidence/coverage/c1.log). The logged-in account's Bash turn printed the remote hostname and the remote-only marker. The mirror then pulled that marker back. The SessionStart hook ran on the provider. MCP did not start. |
 | C2 | Claude Code: read, write, edit change remote files. | yes | proven (evidence/coverage/c2.log). Read returned a token the remote command wrote, and the edited file was on the remote. |
 | C3 | Claude Code: glob and search see remote files. | yes | proven (evidence/coverage/c3.log). Glob and search returned the file the remote command wrote. |
-| C4 | Claude Code: the separate persistent shell tool, hooks and local tool servers are either remote or documented as local. | no | partial (evidence/coverage/c1.log, evidence/coverage/c4.log). Read ran on the provider and reported the remote-only file missing. The SessionStart hook ran on the provider. MCP did not start. Persistent shell was not observed. |
+| C4 | Claude Code: the separate persistent shell tool, hooks and local tool servers are either remote or documented as local. | no | partial (evidence/coverage/c1.log, evidence/coverage/c4-read.log, evidence/coverage/c4.log). Read ran on the provider and reported the remote-only file missing. The SessionStart hook ran on the provider. A local MCP server process started on the provider. The account was refused (billing) before any tool call, so the persistent shell and an MCP tool call were not observed. |
 | C5 | OpenCode: shell tool runs on the remote. | yes | proven (evidence/coverage/c5.log). Free-model shell printed the remote hostname and a remote-only marker. |
 | C6 | OpenCode: file tools see remote files. | yes | proven (evidence/coverage/c6.log). Read returned a token the remote command wrote, and the written file was on the remote. |
-| C7 | Codex: shell and file tools. | no | partial (evidence/coverage/c7.log). Launch reached the usage limit. Shell and file tools were not issued. rw-bash -lc forwards. |
+| C7 | Codex: shell and file tools. | no | partial (evidence/coverage/c7.log). Codex was run again and still stops on its usage limit before issuing a tool. Shell and file tools were not issued. rw-bash -lc forwards. |
 | C8 | Grok: shell and file tools, or documented unsupported with the reason. | no | unsupported (evidence/coverage/c8.log). The command ran in the in-process static shell on the provider. GROK_SHELL was not executed. |
-| C9 | Any other harness: a documented procedure to test whether it can be wrapped (dynamic or static binary, signed or not, shell setting). | no | unproven |
+| C9 | Any other harness: a documented procedure to test whether it can be wrapped (dynamic or static binary, signed or not, shell setting). | no | proven (docs/wrap-a-harness.md, evidence/coverage/provider-mac-c9.log). The procedure is written and its automatic steps ran on six harnesses. They reproduced the D3 and C8 routes for Claude Code, OpenCode, Codex and Grok. Pi and Goose are indicated as forwarder routes and have no live session yet. |
 
 ## D. Interception without changing the harness
 
@@ -84,7 +84,7 @@ Each row needs one real session where the harness, unmodified, performs the acti
 | F3 | The harness was not modified, patched or re-signed. | Checksum of the harness binary before and after. | yes | proven (evidence/whole/remote-linux-f3.log). The harness checksum matched before and after the session. |
 | F4 | A dropped connection mid-task recovers or fails clearly, with no corrupted files. | Kill the link during a write; verify the file is whole or absent. | yes | proven (evidence/whole/remote-linux-f4.log). Killing the transfer left the previous whole file, and a later push landed whole. |
 | F5 | The setup reproduces from the repository's instructions on a second pair of machines. | A fresh operator follows the steps. | yes | proven (evidence/whole/f5-linux-f5.log, evidence/whole/f5-mac-f5.log, evidence/whole/f5-local-f5.log). The README file-plane command passed on a remote Linux peer and a remote Mac peer. The localhost exec suite passed 9 of 9. The provider mount command completed with the documented unsupported result. |
-| F6 | Two sessions can use different remotes at once. | Two harnesses, two remotes, no cross-talk. | no | unproven |
+| F6 | Two sessions can use different remotes at once. | Two harnesses, two remotes, no cross-talk. | no | proven (evidence/whole/f6.log). Two OpenCode sessions ran at the same time on a Linux and a Mac remote. Each saw its own host name and marker, each remote held only its own file, and neither output or local tree held anything from the other. Both sessions are the same harness because Claude Code and Codex were refused. |
 
 ## Order of proof
 
