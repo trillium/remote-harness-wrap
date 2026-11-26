@@ -1,0 +1,8 @@
+id: f5
+label: f5-linux
+when: 2026-11-26T11:27:26Z
+passes: 1
+fails: 0
+readme_command=RW_SSH_TARGET=<ssh-host> RW_LABEL=remote-linux tests/file-plane/run.sh
+ran_exit=0
+PASS: remote-linux file-plane command passed

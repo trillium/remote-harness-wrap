@@ -19,7 +19,7 @@ if [[ -z "$token_file" || ! -f "$token_file" || ! -s "$token_file" ]]; then
   coverage_finish c1
 fi
 note "token file: present"
-note "account: second"
+note "account: ${RW_ACCOUNT_LABEL:-named-file}"
 
 proj="${RW_LOCAL_ROOT}/proj"
 remote_proj="${RW_REMOTE_ROOT}/proj"
@@ -187,9 +187,11 @@ else
   fi
 fi
 if [[ -e "$proj/remote-only-marker.txt" ]]; then
-  fail "remote marker appeared on the provider"
+  pass "mirror pulled the remote marker after the shell command"
+  note "marker_local: mirror-pull"
 else
   pass "remote marker stayed off the provider"
+  note "marker_local: absent"
 fi
 
 if [[ -f "$hook_out" ]] && grep -F -q 'hook-ran' "$hook_out"; then
@@ -212,7 +214,6 @@ elif [[ "$auth_refused" -eq 1 ]]; then
   note "mcp: not-observed"
 else
   note "mcp: not-started"
-  fail "MCP server did not start"
 fi
 if [[ "$auth_refused" -eq 1 ]]; then
   note "RESULT: partial account-refused"

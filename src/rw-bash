@@ -12,7 +12,9 @@
 # Before it runs, this wrapper:
 #   1. cd's on the remote to the spawn cwd translated through RW_PATH_MAP
 #   2. copies each source '…' or source "…" file that exists locally,
-#      after dropping secret-like assignments that are not allowlisted
+#      after dropping secret-like assignments that are not allowlisted.
+#      That provider file is held out of the mirror: a push does not send
+#      the unfiltered body, and a pull does not replace the original.
 #   3. rewrites mapped path prefixes in the script
 #   4. captures pwd -P >| SENTINEL on the remote and writes the provider
 #      path back to SENTINEL
@@ -84,6 +86,7 @@ settle_mirror() {
     fi
   fi
   write_sentinels
+  restore_sources
   log "remote_rc: ${rc}"
   RW_SETTLED_RC=$rc
 }
@@ -113,11 +116,16 @@ SSH_BASE=(
 )
 
 temps=()
+SOURCE_HELD_PATH=()
+SOURCE_HELD_FILE=()
 WAITER_PID=""
 SSH_PID=""
 JOB_DIR=""
 ONESHOT_PIDFILE=""
 RW_SIGNALLED=0
+
+# Replaced once startup files can be translated. Early exits restore nothing.
+restore_sources() { :; }
 
 cleanup_temps() {
   if [[ ${#temps[@]} -gt 0 ]]; then
@@ -161,6 +169,7 @@ on_signal() {
 }
 
 on_exit() {
+  restore_sources
   cleanup_temps
 }
 
@@ -632,6 +641,39 @@ copy_sources() {
   done
 }
 
+# Hold mapped startup files out of the mirror.
+# The push must not publish the unfiltered body.
+# The pull must not replace the provider original with the filtered copy.
+hold_sources() {
+  local src dest held
+  SOURCE_HELD_PATH=()
+  SOURCE_HELD_FILE=()
+  [[ ${#SOURCE_PATHS[@]} -gt 0 ]] || return 0
+  for src in "${SOURCE_PATHS[@]}"; do
+    [[ -f "$src" ]] || continue
+    dest=$(translate_to_remote "$src")
+    [[ "$src" == "$dest" ]] && continue
+    held=$(mktemp "${TMPDIR:-/tmp}/rw-snap-hold.XXXXXX")
+    temps+=("$held")
+    cp -p "$src" "$held" || die "could not hold startup file; command not run locally"
+    SOURCE_HELD_PATH+=("$src")
+    SOURCE_HELD_FILE+=("$held")
+    rm -f -- "$src"
+  done
+  [[ ${#SOURCE_HELD_PATH[@]} -eq 0 ]] || log "held startup file"
+}
+
+restore_sources() {
+  local i parent n
+  n=${#SOURCE_HELD_PATH[@]}
+  [[ "$n" -gt 0 ]] || return 0
+  for ((i = 0; i < n; i++)); do
+    parent=$(dirname "${SOURCE_HELD_PATH[$i]}")
+    mkdir -p -- "$parent" 2>/dev/null || true
+    cp -p "${SOURCE_HELD_FILE[$i]}" "${SOURCE_HELD_PATH[$i]}" || log "failed to restore startup file"
+  done
+}
+
 write_sentinels() {
   local i cap local_sent remote_pwd local_pwd parent
   [[ $sent_n -gt 0 ]] || return 0
@@ -928,8 +970,10 @@ PERL
 
 run_broker() {
   local root="$RW_BROKER_ROOT" dir round_rc
+  hold_sources
   mirror_push || die "mirror push failed; command not run locally"
   ensure_broker
+  restore_sources
   copy_sources
   dir="${root}/jobs/${job_id}"
   JOB_DIR="$dir"
@@ -950,7 +994,9 @@ run_broker() {
 
 run_oneshot() {
   local out err
+  hold_sources
   mirror_push || die "mirror push failed; command not run locally"
+  restore_sources
   out=$(mktemp "${TMPDIR:-/tmp}/rw-out.XXXXXX")
   err=$(mktemp "${TMPDIR:-/tmp}/rw-err.XXXXXX")
   temps+=("$out" "$err")

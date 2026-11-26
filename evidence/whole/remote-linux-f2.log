@@ -1,0 +1,23 @@
+id: f2
+label: remote-linux
+when: 2026-11-26T11:21:58Z
+passes: 10
+fails: 0
+harness=claude
+checksum_before=5b8214f8f082f3187420b27b4063b9b4f4d9412cd66ea436d6d1966ad582700f
+PASS: fixture test fails on the remote before the session
+PASS: provider has no project directory before the session
+harness_exit=0
+PASS: the fixed test passes on the remote
+remote_commit_count=2
+PASS: the commit landed on the remote
+commit_subject=fix-add
+PASS: the remote path is still a git repository
+stop_command=rw-down
+PASS: stop left the pre-existing remote project in place
+PASS: stop removed the provider project directory
+provider_marker_hits=0
+PASS: no copy of the project marker remains on the provider
+PASS: remote project still exists after stop
+checksum_after=5b8214f8f082f3187420b27b4063b9b4f4d9412cd66ea436d6d1966ad582700f
+PASS: harness checksum is unchanged

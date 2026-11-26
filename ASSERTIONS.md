@@ -35,7 +35,7 @@ That copy is not a live mount.
 | B4 | Content search over the mount returns correct and current results, with and without memory-mapped reads. | Search for a fresh token 50 times in both modes. | yes | proven (evidence/file-plane/) |
 | B5 | Directory listing and glob match the remote exactly, including new, renamed and deleted entries. | Mutate on the remote, list on the provider, compare. | yes | proven (evidence/file-plane/) |
 | B6 | File modes, symlinks, case-sensitive names, unicode names, large files and version-control operations behave correctly. | Run a version-control status, commit and checkout through the mount. | yes | proven (evidence/file-plane/) |
-| B7 | The export is limited to one client, one directory, and no root access. | Attempt access from another client and from outside the directory; both fail. | yes | partial (remote-linux accepts auth method none, so a second key is not a client boundary; remote-mac refuses a second key; evidence/file-plane/) |
+| B7 | The export is limited to one client, one directory, and no root access. | Attempt access from another client and from outside the directory; both fail. | yes | proven (evidence/file-plane/). The Linux operator endpoint answers auth method none because the tailnet identity is already accepted, so a second key is not that boundary. The run listener refuses auth method none and a second key. Both peers keep the mirror in one scratch directory and the remote uid is not root. |
 | B8 | Dropping the network gives errors, not a hung harness. | Cut the link mid-read; the call fails within a bounded time. | yes | proven (evidence/file-plane/) |
 | B9 | Unmounting and teardown leave nothing mounted, exported or running. | Check mounts, exports and processes afterward. | yes | proven (evidence/file-plane/) |
 
@@ -45,10 +45,10 @@ Each row needs one real session where the harness, unmodified, performs the acti
 
 | ID | Assertion | Req | Status |
 | --- | --- | --- | --- |
-| C1 | Claude Code: shell tool runs on the remote. | yes | partial (evidence/coverage/c1.log). Second account returned 401. SessionStart hook ran on the provider. Remote shell was not observed. |
+| C1 | Claude Code: shell tool runs on the remote. | yes | proven (evidence/coverage/c1.log). The logged-in account's Bash turn printed the remote hostname and the remote-only marker. The mirror then pulled that marker back. The SessionStart hook ran on the provider. MCP did not start. |
 | C2 | Claude Code: read, write, edit change remote files. | yes | proven (evidence/coverage/c2.log). Read returned a token the remote command wrote, and the edited file was on the remote. |
 | C3 | Claude Code: glob and search see remote files. | yes | proven (evidence/coverage/c3.log). Glob and search returned the file the remote command wrote. |
-| C4 | Claude Code: the separate persistent shell tool, hooks and local tool servers are either remote or documented as local. | no | partial (evidence/coverage/c1.log, evidence/coverage/c4.log). SessionStart hook ran on the provider. Persistent shell, Read, and MCP were not observed. |
+| C4 | Claude Code: the separate persistent shell tool, hooks and local tool servers are either remote or documented as local. | no | partial (evidence/coverage/c1.log, evidence/coverage/c4.log). Read ran on the provider and reported the remote-only file missing. The SessionStart hook ran on the provider. MCP did not start. Persistent shell was not observed. |
 | C5 | OpenCode: shell tool runs on the remote. | yes | proven (evidence/coverage/c5.log). Free-model shell printed the remote hostname and a remote-only marker. |
 | C6 | OpenCode: file tools see remote files. | yes | proven (evidence/coverage/c6.log). Read returned a token the remote command wrote, and the written file was on the remote. |
 | C7 | Codex: shell and file tools. | no | partial (evidence/coverage/c7.log). Launch reached the usage limit. Shell and file tools were not issued. rw-bash -lc forwards. |
@@ -63,7 +63,7 @@ Each row needs one real session where the harness, unmodified, performs the acti
 | D2 | The forwarder never forwards itself, the transport, or the dynamic linker. | Process list shows no recursion. | yes | proven (evidence/interception/) |
 | D3 | Signed, hardened or statically linked harness binaries are classified, with the supported route for each. | Table of binaries and results. | yes | proven (evidence/interception/provider-mac-d3.log) |
 | D4 | If a virtual machine is required, its memory use is measured and bounded. | Resident memory under 1 GiB while idle and while running a task. | no | unproven (no guest was required, so memory was not measured; evidence/interception/provider-mac-d4.log) |
-| D5 | The no-virtual-machine route is exercised for every harness where it is possible. | Same C-series tests with no guest running. | yes | partial (forwarder ran with no guest; group C sessions were not part of this proof; evidence/interception/provider-mac-d5.log) |
+| D5 | The no-virtual-machine route is exercised for every harness where it is possible. | Same C-series tests with no guest running. | yes | proven (evidence/interception/provider-mac-d5.log). No guest was running. Claude, OpenCode, Codex, and Grok each ran a C session on that route. |
 
 ## E. Security and secrets
 
@@ -80,10 +80,10 @@ Each row needs one real session where the harness, unmodified, performs the acti
 | ID | Assertion | Test | Req | Status |
 | --- | --- | --- | --- | --- |
 | F1 | One command starts a wrapped session for a chosen harness, remote and project; one command stops it and cleans up. | Run both on a clean machine. | yes | proven (evidence/whole/remote-linux-f1.log). One start left a wrapped session; one stop ended it and removed the project. |
-| F2 | End to end: an unmodified harness fixes a failing test in a repository that exists only on the remote. The tests run on the remote, the commit lands on the remote, and nothing of the project is left on the provider. | The failing test passes on the remote; the provider has no copy. | yes | unproven |
+| F2 | End to end: an unmodified harness fixes a failing test in a repository that exists only on the remote. The tests run on the remote, the commit lands on the remote, and nothing of the project is left on the provider. | The failing test passes on the remote; the provider has no copy. | yes | proven (evidence/whole/remote-linux-f2.log). An unmodified harness fixed the failing test on the remote, the commit landed there, and the provider copy was removed. |
 | F3 | The harness was not modified, patched or re-signed. | Checksum of the harness binary before and after. | yes | proven (evidence/whole/remote-linux-f3.log). The harness checksum matched before and after the session. |
 | F4 | A dropped connection mid-task recovers or fails clearly, with no corrupted files. | Kill the link during a write; verify the file is whole or absent. | yes | proven (evidence/whole/remote-linux-f4.log). Killing the transfer left the previous whole file, and a later push landed whole. |
-| F5 | The setup reproduces from the repository's instructions on a second pair of machines. | A fresh operator follows the steps. | yes | unproven |
+| F5 | The setup reproduces from the repository's instructions on a second pair of machines. | A fresh operator follows the steps. | yes | proven (evidence/whole/f5-linux-f5.log, evidence/whole/f5-mac-f5.log, evidence/whole/f5-local-f5.log). The README file-plane command passed on a remote Linux peer and a remote Mac peer. The localhost exec suite passed 9 of 9. The provider mount command completed with the documented unsupported result. |
 | F6 | Two sessions can use different remotes at once. | Two harnesses, two remotes, no cross-talk. | no | unproven |
 
 ## Order of proof

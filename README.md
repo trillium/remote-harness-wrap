@@ -80,6 +80,19 @@ B1 measures the provider, not a remote:
 tests/file-plane/b1.sh
 ```
 
+The same command is the setup on a Mac peer.
+Use a label, not a hostname:
+
+```
+RW_SSH_TARGET=<ssh-host> RW_LABEL=remote-mac tests/file-plane/run.sh
+```
+
+On a peer whose operator ssh accepts auth method none, that answer is the tailnet identity already accepted for this operator.
+It is not an anonymous export, and a second key is not the client boundary there.
+The client boundary for a revocable run is `src/run-sshd.sh`.
+That listener allows one public key and refuses a session with no key.
+The operator endpoint is left unchanged.
+
 Logs go in `evidence/file-plane/`.
 The runner removes its scratch directories.
 
@@ -88,4 +101,9 @@ The runner removes its scratch directories.
 Proofs for the DYLD forwarder are under `tests/interception/`.
 Logs go in `evidence/interception/`.
 D4 stays unproven when no virtual machine is required, because guest memory is not measured.
-D5 records a partial result: the forwarder runs with no guest, and the group C harness sessions are out of scope.
+D5 runs the group C sessions while no guest is running.
+The forwarder runs on the provider in that same state.
+
+```
+RW_SSH_TARGET=<ssh-host> RW_LABEL=provider-mac tests/interception/d5.sh
+```
