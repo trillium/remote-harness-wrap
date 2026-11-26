@@ -1,7 +1,7 @@
 id: b1
 label: provider-mac
-when: 2026-11-26T09:17:55Z
-passes: 4
+when: 2026-11-26T12:03:37Z
+passes: 3
 fails: 0
 provider_os=Darwin
 provider_release=25.3.0
@@ -18,9 +18,9 @@ status: unsupported
 reason: System Policy denies ordinary reads of the nfs mount
 system_policy_lines=10
 system_policy_deny=present
-system_policy_sample=2026-11-26 01:17:50.531 E  kernel[0:21c87968] (Sandbox) System Policy: python3.13(72203) deny(1) file-write-create /private/etc/exports
-smb_hosts=2 smb_open=0
-PASS: smb port 445 is closed on every probed host
+system_policy_sample=2026-11-26 04:03:30.487 E  kernel[0:22cbef2d] (Sandbox) System Policy: python3.13(41064) deny(1) file-write-create /private/etc/exports
+smb_hosts=0 smb_open=0
+smb=not-probed
 fuse_installed=no
 fuse_t=pkg-installer
 PASS: FUSE-T is not installed and its installer needs an administrator

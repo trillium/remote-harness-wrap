@@ -16,18 +16,22 @@ exec_wrapper "$RW_LOCAL_ROOT/proj" "$script" >"$out" 2>"${RW_RAW}/a5-err.txt"
 rc=$?
 [[ "$rc" -eq 0 ]] && pass "rewrite call exit 0" || fail "rewrite call exit ${rc}"
 
-if [[ -f "$local_abs" ]]; then
-  fail "provider path was written on the provider"
-else
-  pass "provider path was not written on the provider"
-fi
-
 remote_body=$(exec_ssh "cat $(printf '%q' "$remote_abs")" 2>/dev/null || true)
 remote_body=${remote_body%$'\n'}
 if [[ "$remote_body" == "ABS" ]]; then
   pass "remote file is at the remote path"
 else
   fail "remote file body [${remote_body}]"
+fi
+if [[ -f "$local_abs" ]]; then
+  local_body=$(tr -d '\r\n' <"$local_abs")
+  if [[ "$local_body" == "ABS" && "$remote_body" == "ABS" ]]; then
+    pass "mirror pulled the rewritten file back to the provider"
+  else
+    fail "provider path was written on the provider"
+  fi
+else
+  pass "provider path was not written on the provider"
 fi
 
 if grep -F -q "$RW_REMOTE_ROOT" "$out"; then

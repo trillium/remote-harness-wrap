@@ -313,7 +313,7 @@ cmd_down() {
   fi
   if [[ "$created_local" == 1 && -n "$local_dir" ]]; then
     assert_local "$local_dir"
-    rm -rf "$local_dir"
+    rm -rf "$local_dir" "${local_dir}.rw-manifest"
   fi
   if [[ -n "$remote" ]]; then
     ssh_exit

@@ -1,6 +1,6 @@
 id: b8
 label: remote-mac
-when: 2026-11-26T09:45:58Z
+when: 2026-11-26T11:23:19Z
 passes: 2
 fails: 0
 plane: ssh-sync

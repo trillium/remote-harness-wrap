@@ -1,5 +1,5 @@
 id: c5
-when: 2026-11-26T10:02:55Z
+when: 2026-11-26T11:34:17Z
 passes: 5
 fails: 0
 opencode: 1.18.4
@@ -11,5 +11,6 @@ c6_shell: remote-only file visible to the shell
 PASS: free-model turn printed the marker command's output
 PASS: shell printed the remote hostname
 hosts_differ: yes
-PASS: remote marker stayed off the provider
+PASS: mirror pulled the remote marker after the shell command
+marker_local: mirror-pull
 RESULT: see passes

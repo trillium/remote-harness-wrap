@@ -35,7 +35,11 @@ else
   RW_OWN_MAP=0
 fi
 export RW_PATH_MAP RW_LOCAL_ROOT RW_REMOTE_ROOT
-RW_EVIDENCE="${RW_EVIDENCE:-$(exec_root)/evidence/exec}"
+# This runner owns evidence/exec. A parent proof must not redirect it.
+case "${RW_EVIDENCE:-}" in
+  */evidence/exec) ;;
+  *) RW_EVIDENCE="$(exec_root)/evidence/exec" ;;
+esac
 RW_RAW="${RW_RAW:-${TMPDIR:-/tmp}/rw-exec-proof-raw}"
 export RW_EVIDENCE RW_RAW
 mkdir -p "$RW_LOCAL_ROOT/proj" "$RW_EVIDENCE" "$RW_RAW"

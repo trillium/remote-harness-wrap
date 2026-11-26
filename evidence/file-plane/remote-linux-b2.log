@@ -1,6 +1,6 @@
 id: b2
 label: remote-linux
-when: 2026-11-26T09:35:08Z
+when: 2026-11-26T11:23:49Z
 passes: 4
 fails: 0
 plane: ssh-sync

@@ -21,7 +21,11 @@ export RW_SSH_TARGET
 RW_KEEP_SESSION=1
 export RW_KEEP_SESSION
 RW_ROOT=$(proof_root)
-RW_EVIDENCE="${RW_EVIDENCE:-$RW_ROOT/evidence/file-plane}"
+# This runner owns evidence/file-plane. A parent proof must not redirect it.
+case "${RW_EVIDENCE:-}" in
+  */evidence/file-plane) ;;
+  *) RW_EVIDENCE="$RW_ROOT/evidence/file-plane" ;;
+esac
 RW_RAW="${RW_RAW:-${TMPDIR:-/tmp}/rw-bd-raw}"
 export RW_EVIDENCE RW_RAW
 

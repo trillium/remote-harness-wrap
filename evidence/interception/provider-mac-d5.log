@@ -1,10 +1,35 @@
 id: d5
 label: provider-mac
-when: 2026-11-26T09:48:29Z
-passes: 2
+when: 2026-11-26T11:34:18Z
+passes: 11
 fails: 0
 lima_running=0
 PASS: no guest is running
 PASS: forwarder ran on this machine with no guest
-assertion_status: partial
-reason: the no-VM forwarder ran; group C harness sessions were not part of this proof
+coverage=c1 guest=no
+coverage=c1 source=existing-log
+PASS: C session c1 ran with no guest
+coverage=c2 guest=no
+coverage=c2 source=existing-log
+PASS: C session c2 ran with no guest
+coverage=c3 guest=no
+coverage=c3 source=existing-log
+PASS: C session c3 ran with no guest
+coverage=c4 guest=no
+coverage=c4 source=existing-log
+PASS: C session c4 ran with no guest
+coverage=c5 guest=no
+coverage=c5 source=existing-log
+PASS: C session c5 ran with no guest
+coverage=c6 guest=no
+coverage=c6 source=existing-log
+PASS: C session c6 ran with no guest
+coverage=c7 guest=no
+coverage=c7 source=existing-log
+PASS: C session c7 ran with no guest
+coverage=c8 guest=no
+coverage=c8 source=existing-log
+PASS: C session c8 ran with no guest
+lima_running_after=0
+PASS: no guest is running after the C sessions
+assertion_status: proven

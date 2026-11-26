@@ -19,7 +19,8 @@ coverage_begin() {
   mkdir -p "$RW_RAW"
   exec_begin "$@"
   case "${RW_EVIDENCE:-}" in
-    "" | */evidence/exec) RW_EVIDENCE="$(coverage_root)/evidence/coverage" ;;
+    */evidence/coverage) ;;
+    *) RW_EVIDENCE="$(coverage_root)/evidence/coverage" ;;
   esac
   mkdir -p "$RW_EVIDENCE"
   export RW_EVIDENCE

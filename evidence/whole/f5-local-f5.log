@@ -1,0 +1,11 @@
+id: f5
+label: f5-local
+when: 2026-11-26T12:03:38Z
+passes: 2
+fails: 0
+readme_command=RW_SSH_TARGET=localhost tests/exec/run.sh
+exec_exit=0
+PASS: localhost exec command passed
+readme_command=tests/file-plane/b1.sh
+b1_exit=0
+PASS: provider mount command passed

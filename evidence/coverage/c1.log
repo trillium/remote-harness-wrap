@@ -1,19 +1,20 @@
 id: c1
-when: 2026-11-26T10:02:34Z
-passes: 3
+when: 2026-11-26T11:33:56Z
+passes: 7
 fails: 0
 claude: 2.1.332 (Claude Code)
 token file: present
-account: second
+account: logged-in
 PASS: remote marker is absent on the provider
-claude_exit: 1
-auth: 401 invalid
-shell: not-observed
-hosts_differ: not-observed
-marker: not-observed
-The named account refused the session. No further account was tried.
-PASS: remote marker stayed off the provider
+claude_exit: 0
+PASS: real session ran the marker command
+PASS: session observed the remote-only marker
+PASS: session printed the remote hostname and not the provider hostname
+hosts_differ: yes
+PASS: claude -p exited 0
+PASS: mirror pulled the remote marker after the shell command
+marker_local: mirror-pull
 PASS: SessionStart hook ran on the provider
 hook: local
-mcp: not-observed
-RESULT: partial account-refused
+mcp: not-started
+RESULT: see passes

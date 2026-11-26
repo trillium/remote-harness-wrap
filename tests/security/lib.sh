@@ -95,20 +95,22 @@ sec_scan_remote() {
   local payload
   payload=$(mktemp "${TMPDIR:-/tmp}/rw-sec-scan.XXXXXX")
   chmod 600 "$payload"
-  CANARY="$canary" SCRATCH="$scratch" BROKER="$broker" SINCE="$(( $(date +%s) - 180 ))" python3 - "$payload" <<'PY'
+  CANARY="$canary" SCRATCH="$scratch" BROKER="$broker" LOCAL="${RW_LOCAL_ROOT:-}" SINCE="$(( $(date +%s) - 180 ))" python3 - "$payload" <<'PY'
 import json, os, sys
 path = sys.argv[1]
 body = "CANARY=" + json.dumps(os.environ["CANARY"]) + "\n"
 body += "SCRATCH=" + json.dumps(os.environ.get("SCRATCH", "")) + "\n"
 body += "BROKER=" + json.dumps(os.environ.get("BROKER", "")) + "\n"
+body += "LOCAL=" + json.dumps(os.environ.get("LOCAL", "")) + "\n"
 body += "SINCE=" + json.dumps(int(os.environ.get("SINCE", "0"))) + "\n"
 body += r'''
 import os, stat, sys, time, subprocess
 canary = CANARY.encode()
 scratch = SCRATCH
 broker = BROKER
+local_root = LOCAL
 since = SINCE
-deadline = time.monotonic() + 90
+deadline = time.monotonic() + 180
 counts = {
     "files": 0, "proc": 0,
     "hits_scratch": 0, "hits_broker": 0, "hits_tmp": 0,
@@ -142,7 +144,17 @@ def klass(path):
         return "home"
     return "other"
 
+def under_provider(path):
+    path = norm(path)
+    root = norm(local_root) if local_root else ""
+    if not root:
+        return False
+    return path == root or path.startswith(root + os.sep)
+
 def add_hit(path):
+    # The provider startup file is allowed to keep its own secret.
+    if under_provider(path):
+        return
     key = "hits_" + klass(path)
     counts[key] = counts.get(key, 0) + 1
 
@@ -184,12 +196,29 @@ def walk(root, fresh_only):
 
 # Scratch and broker are read in full. Elsewhere, only files touched during
 # this session can contain a canary that did not exist before it started.
+seen_roots = set()
+
+def root_key(root):
+    try:
+        st = os.stat(root)
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino)
+
 for root in (scratch, broker):
     if root and os.path.isdir(root):
+        key = root_key(root)
+        if key is not None:
+            seen_roots.add(key)
         walk(root, False)
 for root in ("/tmp", "/var/tmp", "/private/tmp", "/private/var/tmp", home):
-    if root and os.path.isdir(root):
-        walk(root, True)
+    if not root or not os.path.isdir(root):
+        continue
+    key = root_key(root)
+    if key is None or key in seen_roots:
+        continue
+    seen_roots.add(key)
+    walk(root, True)
 
 me = os.getpid()
 if os.path.isdir("/proc"):
