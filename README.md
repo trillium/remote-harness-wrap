@@ -126,3 +126,4 @@ tests/whole/f6.sh --target-a <ssh-host> --target-b <ssh-host>
 
 Each session gets its own path map, broker directory and ssh control socket.
 The log is `evidence/whole/f6.log`.
+`--harness claude` runs two Claude Code sessions instead, using `RW_TOKEN_FILE`, and writes `evidence/whole/f6-claude.log`.

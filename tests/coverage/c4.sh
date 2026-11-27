@@ -93,7 +93,7 @@ json.dump({"mcpServers": {"rw-probe": {"command": "python3", "args": [mcp],
           open(mcp_config, "w"))
 PY
 
-prompt='Do these in order, one tool call each, and then stop. 1) Bash: cd sub && hostname. 2) Bash: pwd && hostname && cat remote-only-marker.txt. 3) the whereami tool from the rw-probe MCP server. After each call print its output verbatim. Do not read, write, edit, search, or print the environment, tokens, or home directory.'
+prompt='Do these in order, one tool call each, and then stop. 1) Bash: cd sub && hostname. 2) Bash: pwd && hostname && cat remote-only-marker.txt. 3) the whereami tool from the rw-probe MCP server. After each call, copy its raw output into your reply exactly as returned, inside a code block, with no summary or paraphrase. Your final reply must contain all three raw outputs. Do not read, write, edit, search, or print the environment, tokens, or home directory.'
 out="${RW_RAW}/c4-claude.out"
 err="${RW_RAW}/c4-claude.err"
 raw_log="${RW_RAW}/c4-argv.log"
@@ -175,8 +175,10 @@ else
   fail "second Bash call did not see the remote-only file in sub/"
   note "persistent_cwd: no"
 fi
-if [[ -n "$RW_REMOTE_HOSTNAME" ]] && grep -F -q "$RW_REMOTE_HOSTNAME" "$out" \
-  && ! grep -F -q "$RW_PROVIDER_HOSTNAME" "$out"; then
+# The MCP tool is local by design and prints the provider host, so its line is excluded here.
+shell_out=$(grep -v 'RW_C4_MCP_HOST' "$out")
+if [[ -n "$RW_REMOTE_HOSTNAME" ]] && grep -F -q "$RW_REMOTE_HOSTNAME" <<<"$shell_out" \
+  && ! grep -F -q "$RW_PROVIDER_HOSTNAME" <<<"$shell_out"; then
   pass "both Bash calls printed the remote hostname and not the provider hostname"
   note "shell_host: remote"
 else
