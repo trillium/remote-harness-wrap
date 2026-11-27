@@ -29,7 +29,7 @@ That copy is not a live mount.
 
 | ID | Assertion | Test | Req | Status |
 | --- | --- | --- | --- | --- |
-| B1 | The remote project tree is readable and writable by ordinary unprivileged processes on the provider. | `ls`, `cat`, write a file, without special permissions, on the provider OS in use. | yes | unsupported (evidence/file-plane/provider-mac-b1.log) |
+| B1 | The remote project tree is readable and writable by ordinary unprivileged processes on the provider. | `ls`, `cat`, write a file, without special permissions, on the provider OS in use. | yes | proven (evidence/file-plane/provider-mac-b1-webdav.log). On a Mac provider, `mount_webdav` of a loopback ssh forward to a Linux remote's WebDAV server ran as the ordinary user. An ordinary python3 listed, read and wrote the remote tree, and each side saw the other's writes. The mount is `noexec`. NFS stays unreadable (evidence/file-plane/provider-mac-b1.log), FUSE-T needs an administrator, and SMB was not probed. Only the Linux remote was tried. |
 | B2 | A file written by the harness's write or edit tool is visible to a remote command immediately. | Write on the provider, `cat` on the remote in the next call. | yes | proven (evidence/file-plane/) |
 | B3 | A file created by a remote command is visible to the harness's file tools immediately. | Create on the remote, then read and list on the provider, 50 times, zero misses. | yes | proven (evidence/file-plane/) |
 | B4 | Content search over the mount returns correct and current results, with and without memory-mapped reads. | Search for a fresh token 50 times in both modes. | yes | proven (evidence/file-plane/) |
