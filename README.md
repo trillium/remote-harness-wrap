@@ -37,11 +37,16 @@ The runner does not print that file.
 
 `unsupported` is a measured result, not a skipped test.
 The claim was tried, ordinary processes could not do it, and the log under `evidence/` records the reason.
-On the provider Mac, B1 is unsupported for a live mount.
+On the provider Mac, B1 is proven only for a WebDAV mount.
 An NFS mount can be created, and an ordinary read of that mount returns errno 1.
-System Policy denies the read.
-SMB and a FUSE-T sshfs mount are denied the same way: `file-read-data` returns errno 1, including for the harness.
-The supported route is a mirror inside `RW_PATH_MAP`.
+System Policy denies the read (`evidence/file-plane/provider-mac-b1.log`).
+FUSE-T needs an administrator installer, and SMB was not probed.
+A WebDAV mount needs no administrator: the remote runs a WebDAV server on its loopback address, an ssh forward carries it, and `mount_webdav` mounts it as the ordinary user.
+An ordinary process lists, reads and writes that tree, and each side sees the other's writes (`evidence/file-plane/provider-mac-b1-webdav.log`).
+The mount is `noexec`, so programs cannot run from it.
+Run it with `RW_SSH_TARGET=<ssh-host> RW_WSGIDAV_LIB=<dir holding wsgidav> tests/file-plane/b1-webdav.sh`.
+B2 through B9 were not rerun over this mount.
+The route the harness uses is still a mirror inside `RW_PATH_MAP`.
 After each wrapped command, `src/rw-bash` pulls the remote tree into the local directory.
 Before the next command, it pushes files the provider wrote or edited.
 Read, write, edit, glob, and search use that directory.
@@ -62,7 +67,7 @@ The remote directory must be `/tmp/rw-bd-*` or `/tmp/rw-pkg-*`.
 `push` replaces the remote directory.
 `pull` replaces the local directory.
 That copy is the plane measured by B2 through B9.
-It is not a live mount, and it does not make B1 true.
+It is not a live mount.
 `src/rw run` starts a command with the path map set.
 A command named `claude` gets `CLAUDE_CODE_SHELL`.
 Any other command gets the DYLD forwarder.

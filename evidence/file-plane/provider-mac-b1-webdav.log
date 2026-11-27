@@ -1,0 +1,24 @@
+id: b1-webdav
+label: provider-mac
+when: 2026-11-27T03:31:41Z
+passes: 4
+fails: 0
+provider_os=Darwin
+provider_uid_is_root=no
+plane_attempt=webdav-over-ssh-forward
+remote_os=Linux
+remote_webdav_bound_to_loopback=1
+PASS: the remote WebDAV server answers on its loopback address
+tunnel_ready=1
+webdav_mount=ok
+mount_needed_sudo=no
+ordinary_process=listdir=hello.txt;read=remote-owned;write=ok
+PASS: an ordinary process listed, read and wrote the mounted remote tree
+remote_sees_provider_write=provider-wrote
+PASS: the file the provider wrote is in the remote directory
+provider_sees_remote_write=remote-wrote
+PASS: a file the remote wrote is readable through the mount
+mount_options=webdav, nodev, noexec, nosuid, mounted by user
+limit: the mount is noexec, so programs cannot run from the mounted tree
+status: proven
+result: an unprivileged mount of the remote tree is readable and writable on a Mac
