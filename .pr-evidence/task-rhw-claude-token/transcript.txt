@@ -1,0 +1,45 @@
+id: c4
+when: 2026-11-27T07:54:58Z
+passes: 6
+fails: 0
+claude: 2.1.332 (Claude Code)
+credential: token file
+claude_exit: 0
+PASS: second Bash call saw the remote-only file in sub/ without its own cd
+persistent_cwd: yes
+PASS: both Bash calls printed the remote hostname and not the provider hostname
+shell_host: remote
+PASS: pwd shows the mapped sub directory
+PASS: PreToolUse hook ran on the provider for each Bash call
+hook: local (3 calls)
+PASS: MCP server started and answered a tool call on the provider
+mcp: local
+PASS: claude -p exited 0
+RESULT: see passes
+
+id: f6
+harness: claude
+when: 2026-11-27T07:58:38Z
+passes: 16
+fails: 0
+harness: claude 2.1.332 (Claude Code) (two concurrent sessions)
+credential: token file
+PASS: the two targets are different machines
+session_a: 1795766280..1795766312 exit 0
+session_b: 1795766286..1795766317 exit 0
+PASS: the two sessions overlapped in time
+PASS: session a ran its command
+PASS: session a read the file only its own remote has
+PASS: session a printed its own remote host name
+PASS: session a output holds nothing from the other session
+PASS: remote a holds the file session a created
+PASS: remote b holds no file that belongs to session a
+PASS: local tree of session a holds no file from the other session
+PASS: session b ran its command
+PASS: session b read the file only its own remote has
+PASS: session b printed its own remote host name
+PASS: session b output holds nothing from the other session
+PASS: remote b holds the file session b created
+PASS: remote a holds no file that belongs to session b
+PASS: local tree of session b holds no file from the other session
+RESULT: see passes

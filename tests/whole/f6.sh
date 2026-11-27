@@ -18,10 +18,12 @@ EVID="${RW_EVIDENCE:-$ROOT/evidence/whole}"
 RAW="${RW_RAW:-${TMPDIR:-/tmp}/rw-f6-raw}"
 TARGET_A=""
 TARGET_B=""
+HARNESS=opencode
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target-a) TARGET_A="$2"; shift 2 ;;
     --target-b) TARGET_B="$2"; shift 2 ;;
+    --harness) HARNESS="$2"; shift 2 ;;
     --evidence) EVID="$2"; shift 2 ;;
     *) shift ;;
   esac
@@ -45,8 +47,20 @@ rssh() { # rssh <target> <control> <command...>
   fail "two different ssh targets are required"
   exit 1
 }
-command -v opencode >/dev/null 2>&1 || { fail "opencode is not on PATH"; exit 1; }
-note "harness: opencode $(opencode --version 2>/dev/null | head -1) (free model, two concurrent sessions)"
+case "$HARNESS" in
+  opencode)
+    command -v opencode >/dev/null 2>&1 || { fail "opencode is not on PATH"; exit 1; }
+    note "harness: opencode $(opencode --version 2>/dev/null | head -1) (free model, two concurrent sessions)" ;;
+  claude)
+    command -v claude >/dev/null 2>&1 || { fail "claude is not on PATH"; exit 1; }
+    note "harness: claude $(claude --version 2>/dev/null | head -1) (two concurrent sessions)"
+    if [[ -n "${RW_TOKEN_FILE:-}" && -s "$RW_TOKEN_FILE" ]]; then
+      note "credential: token file"
+    else
+      note "credential: existing provider login"
+    fi ;;
+  *) fail "unknown harness: $HARNESS"; exit 1 ;;
+esac
 
 NONCE=$(date +%s)$RANDOM
 # bash 3.2 has no associative arrays: variables are named by side, e.g. TGT_a.
@@ -87,14 +101,35 @@ run_session() { # run_session <a|b>
   date +%s >"$RAW/f6-${s}.start"
   (
     cd "$proj" || exit 97
-    SHELL="$WRAP" \
-      RW_SSH_TARGET="$t" \
-      RW_PATH_MAP="$(get LOCAL $s)|$(get REMOTE $s)" \
-      RW_TRANSPORT=broker \
-      RW_BROKER_ROOT="$(get BROKER $s)" \
-      RW_CONTROL_PATH="$(get CTRL $s)" \
-      RW_CONTROL_PERSIST=10m \
-      timeout 240 opencode --pure run -m opencode/big-pickle --auto "$prompt"
+    if [[ "$HARNESS" == claude ]]; then
+      if [[ -n "${RW_TOKEN_FILE:-}" && -s "$RW_TOKEN_FILE" ]]; then
+        CLAUDE_CODE_OAUTH_TOKEN=$(<"$RW_TOKEN_FILE")
+        export CLAUDE_CODE_OAUTH_TOKEN
+      fi
+      CLAUDE_CODE_SHELL="$WRAP" \
+        RW_SSH_TARGET="$t" \
+        RW_PATH_MAP="$(get LOCAL $s)|$(get REMOTE $s)" \
+        RW_TRANSPORT=broker \
+        RW_BROKER_ROOT="$(get BROKER $s)" \
+        RW_CONTROL_PATH="$(get CTRL $s)" \
+        RW_CONTROL_PERSIST=10m \
+        timeout 240 claude -p \
+          --permission-mode bypassPermissions \
+          --dangerously-skip-permissions \
+          --allowedTools "Bash" \
+          --disallowedTools "Edit,Write,NotebookEdit,Read,Grep,Glob" \
+          --effort low \
+          "$prompt Copy the raw output into your reply exactly as returned, in a code block, with no summary."
+    else
+      SHELL="$WRAP" \
+        RW_SSH_TARGET="$t" \
+        RW_PATH_MAP="$(get LOCAL $s)|$(get REMOTE $s)" \
+        RW_TRANSPORT=broker \
+        RW_BROKER_ROOT="$(get BROKER $s)" \
+        RW_CONTROL_PATH="$(get CTRL $s)" \
+        RW_CONTROL_PERSIST=10m \
+        timeout 240 opencode --pure run -m opencode/big-pickle --auto "$prompt"
+    fi
   ) >"$RAW/f6-${s}.out" 2>"$RAW/f6-${s}.err"
   echo $? >"$RAW/f6-${s}.rc"
   date +%s >"$RAW/f6-${s}.end"
@@ -151,12 +186,13 @@ for s in a b; do
     pass "session ${s} output holds nothing from the other session"
   fi
   # The remote that session s used holds s's file, and the other remote does not.
-  if rssh "$(get TGT $s)" "$(get CTRL $s)" "grep -q -F made-by-${s}-${NONCE} $(get REMOTE $s)/proj/made-${s}.txt"; then
+  # Decide from stdout, not the exit status: some ssh targets (mini0) always return 0.
+  if [[ -n "$(rssh "$(get TGT $s)" "$(get CTRL $s)" "grep -F made-by-${s}-${NONCE} $(get REMOTE $s)/proj/made-${s}.txt 2>/dev/null")" ]]; then
     pass "remote ${s} holds the file session ${s} created"
   else
     fail "remote ${s} lacks the file session ${s} created"
   fi
-  if rssh "$(get TGT $o)" "$(get CTRL $o)" "find /tmp -maxdepth 3 \( -name 'made-${s}.txt' -o -name 'marker-${s}.txt' \) -path '*${NONCE}*' 2>/dev/null | grep -q ."; then
+  if [[ -n "$(rssh "$(get TGT $o)" "$(get CTRL $o)" "find /tmp -maxdepth 3 \( -name 'made-${s}.txt' -o -name 'marker-${s}.txt' \) -path '*${NONCE}*' 2>/dev/null")" ]]; then
     fail "remote ${o} holds a file that belongs to session ${s}"
   else
     pass "remote ${o} holds no file that belongs to session ${s}"
@@ -171,8 +207,9 @@ done
 
 note "RESULT: see passes"
 out="$EVID/f6.log"
+[[ "$HARNESS" == claude ]] && out="$EVID/f6-claude.log"
 {
-  printf 'id: f6\n'
+  printf 'id: f6\nharness: %s\n' "$HARNESS"
   printf 'when: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'passes: %s\n' "$PASSES"
   printf 'fails: %s\n' "$FAILS"

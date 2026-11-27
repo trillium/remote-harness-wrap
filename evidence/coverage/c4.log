@@ -1,16 +1,18 @@
 id: c4
-when: 2026-11-27T04:12:56Z
-passes: 2
+when: 2026-11-27T07:54:58Z
+passes: 6
 fails: 0
 claude: 2.1.332 (Claude Code)
-credential: existing provider login
-claude_exit: 1
-session: refused by the account before any tool call
-PASS: SessionStart hook ran on the provider
-hook: local
-PASS: MCP server process started on the provider
-mcp: local (started; no tool call issued)
-persistent shell: not-observed
-mcp tool call: not-observed
-The account refused the session. No other account was tried.
-RESULT: partial account-refused
+credential: token file
+claude_exit: 0
+PASS: second Bash call saw the remote-only file in sub/ without its own cd
+persistent_cwd: yes
+PASS: both Bash calls printed the remote hostname and not the provider hostname
+shell_host: remote
+PASS: pwd shows the mapped sub directory
+PASS: PreToolUse hook ran on the provider for each Bash call
+hook: local (3 calls)
+PASS: MCP server started and answered a tool call on the provider
+mcp: local
+PASS: claude -p exited 0
+RESULT: see passes
