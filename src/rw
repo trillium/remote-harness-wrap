@@ -60,6 +60,14 @@ ssh_exit() {
     -O exit "$REMOTE" >/dev/null 2>&1 || true
 }
 
+# Stop this session's broker and its jobs on the remote and remove its
+# directory. Safe to call twice: a missing directory is a no-op.
+reap_broker() {
+  local root="${1:-}"
+  [[ -n "$root" && -n "${REMOTE:-}" ]] || return 0
+  ssh_cmd "/bin/bash --noprofile --norc -s -- $(printf '%q' "$root")" <"$SRC/broker-reap.sh" >/dev/null 2>&1 || true
+}
+
 # Only one scratch directory directly under /tmp may be replaced.
 assert_project() {
   local project="$1" rest
@@ -125,6 +133,7 @@ write_state() {
     printf 'CREATED_PROJECT=%q\n' "$CREATED_PROJECT"
     printf 'CREATED_LOCAL=%q\n' "$CREATED_LOCAL"
     printf 'RUNNER=%q\n' "$$"
+    printf 'BROKER_ROOT=%q\n' "${RW_BROKER_ROOT:-}"
   } >"$STATE_FILE"
 }
 
@@ -235,6 +244,13 @@ cmd_run() {
   export RW_GUEST_ROOT="$phys"
   export RW_REMOTE_ROOT="$PROJECT"
   export RW_CONTROL_PATH RW_CONTROL_PERSIST RW_CONNECT_TIMEOUT
+  # One broker directory per run, so ending the run can remove exactly it.
+  export RW_BROKER_ROOT="${RW_BROKER_ROOT:-/tmp/rw-exec-broker-$$-${RANDOM}}"
+  RUN_BROKER_ROOT="$RW_BROKER_ROOT"
+  trap 'reap_broker "$RUN_BROKER_ROOT"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
   write_state
   mirror_pull || die "mirror pull failed"
   export USE_BUILTIN_RIPGREP=0
@@ -264,7 +280,7 @@ cmd_run() {
 }
 
 cmd_down() {
-  local remote="" project="" local_dir="" created_project=0 created_local=0
+  local remote="" broker_root="" project="" local_dir="" created_project=0 created_local=0
   [[ $# -eq 0 ]] || die "down takes no arguments"
   if [[ ! -f "$STATE_FILE" ]]; then
     printf 'state=absent\n'
@@ -279,6 +295,7 @@ cmd_down() {
   created_local=${CREATED_LOCAL:-0}
   pid=${PID:-}
   runner=${RUNNER:-}
+  broker_root=${BROKER_ROOT:-}
   REMOTE=$remote
   if [[ -n "$runner" || ( -n "$pid" && "$pid" != "$$" ) ]]; then
     if [[ -n "$pid" && "$pid" != "$$" && "$pid" != "$runner" ]]; then
@@ -316,6 +333,10 @@ cmd_down() {
     rm -rf "$local_dir" "${local_dir}.rw-manifest"
   fi
   if [[ -n "$remote" ]]; then
+    if [[ -n "$broker_root" ]]; then
+      reap_broker "$broker_root"
+      printf 'broker=reaped\n'
+    fi
     ssh_exit
   fi
   rm -rf "$STATE_DIR"

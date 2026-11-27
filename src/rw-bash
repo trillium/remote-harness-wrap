@@ -26,7 +26,10 @@
 # for a later command. RW_TRANSPORT=oneshot keeps the one-ssh behavior.
 #
 # Cancelling this process (INT, TERM, HUP) kills the remote process group
-# for the command, not only the local ssh.
+# for the command, not only the local ssh. The broker belongs to the session,
+# not to one command, so it stays for the next command. It is removed by
+# `rw-bash --reap` (what `rw run` and `rw down` call), or exits on its own
+# after RW_BROKER_IDLE seconds without a command.
 #
 # If ssh to the target fails, the script is not executed anywhere.
 # The ssh client authenticates with a public key only. It does not offer
@@ -47,6 +50,10 @@
 #   RW_CONNECT_TIMEOUT ssh ConnectTimeout seconds (default 8).
 #   RW_TRANSPORT       broker (default) or oneshot.
 #   RW_BROKER_ROOT     remote directory for the broker (default /tmp/rw-exec-broker).
+#   RW_BROKER_IDLE     seconds with no command and no running job before the
+#                      broker exits by itself (default 900). Each command
+#                      renews the lease, so a live session keeps its broker.
+#                      A background process a command started is not stopped.
 #   RW_ALLOW_VARS      comma-separated variable names that may cross inside a
 #                      copied snapshot even when the name looks like a secret.
 #                      Secret-like names (SECRET, TOKEN, PASSWORD, CREDENTIAL,
@@ -69,6 +76,8 @@ RW_CONTROL_PERSIST="${RW_CONTROL_PERSIST:-30m}"
 RW_CONNECT_TIMEOUT="${RW_CONNECT_TIMEOUT:-8}"
 RW_TRANSPORT="${RW_TRANSPORT:-broker}"
 RW_BROKER_ROOT="${RW_BROKER_ROOT:-/tmp/rw-exec-broker}"
+RW_BROKER_IDLE="${RW_BROKER_IDLE:-900}"
+case "$RW_BROKER_IDLE" in '' | *[!0-9]*) RW_BROKER_IDLE=900 ;; esac
 RW_ALLOW_VARS="${RW_ALLOW_VARS:-}"
 RW_SRC=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=mirror.sh
@@ -137,6 +146,23 @@ ssh_quick() {
   ssh "${SSH_BASE[@]}" -T "$RW_SSH_TARGET" "$@"
 }
 
+broker_cache_path() {
+  local safe root_key
+  safe=$(printf '%s' "$RW_SSH_TARGET" | tr -c 'A-Za-z0-9._-' '_')
+  root_key=$(printf '%s' "$RW_BROKER_ROOT" | tr -c 'A-Za-z0-9._-' '_')
+  printf '%s' "${TMPDIR:-/tmp}/rw-broker-pid.${safe}.${root_key}"
+}
+
+forget_broker_pid() {
+  rm -f "$(broker_cache_path)"
+}
+
+# Stop the broker and any job it started, then remove its directory. The
+# remote script checks that the pid is this root's broker before it signals.
+reap_broker_remote() {
+  ssh_quick "/bin/bash --noprofile --norc -s -- $(printf '%q' "$1")" <"$RW_SRC/broker-reap.sh"
+}
+
 kill_remote_job() {
   local pidfile="" pid
   if [[ -n "$JOB_DIR" ]]; then
@@ -177,6 +203,13 @@ trap on_exit EXIT
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
 trap 'on_signal HUP' HUP
+
+# --- reap: end this session's broker now ---
+if [[ "${1:-}" == "--reap" ]]; then
+  reap_broker_remote "$RW_BROKER_ROOT" || die "could not reap the broker on ${RW_SSH_TARGET}"
+  forget_broker_pid
+  exit 0
+fi
 
 # --- argv: find -c and take the script; accept a following -l ---
 args=("$@")
@@ -706,17 +739,6 @@ emit_translated() {
   cat "$err" >&2
 }
 
-broker_cache_path() {
-  local safe root_key
-  safe=$(printf '%s' "$RW_SSH_TARGET" | tr -c 'A-Za-z0-9._-' '_')
-  root_key=$(printf '%s' "$RW_BROKER_ROOT" | tr -c 'A-Za-z0-9._-' '_')
-  printf '%s' "${TMPDIR:-/tmp}/rw-broker-pid.${safe}.${root_key}"
-}
-
-forget_broker_pid() {
-  rm -f "$(broker_cache_path)"
-}
-
 remember_broker_pid() {
   local root="$1" pid cache
   pid=$(ssh_quick "cat $(printf '%q' "$root/broker.pid") 2>/dev/null" 2>/dev/null || true)
@@ -741,14 +763,34 @@ install_broker_files() {
   ssh_quick "cat > $(printf '%q' "$root/broker.sh") && chmod 700 $(printf '%q' "$root/broker.sh")" <<'BROKER' \
     || die "could not install broker; command not run locally"
 #!/bin/bash
-# Detached command broker. One process per target. Jobs are not children
+# Detached command broker. One process per session. Jobs are not children
 # of the per-command ssh session, so a background job survives that session.
+#
+# Owner liveness: every wrapper command touches $root/lease before it
+# submits. The broker exits on its own when no command has arrived for
+# $idle seconds and no job it started is still running, so a wrapper that was
+# killed without cleanup does not leave a broker behind. It also exits when
+# its directory is removed or it receives TERM. An idle exit also removes the
+# directory.
 set -u
 root="$1"
+idle="${2:-900}"
+case "$idle" in '' | *[!0-9]*) idle=900 ;; esac
 echo $$ > "$root/broker.pid"
+: > "$root/lease"
+: > "$root/.seen"
+quit() {
+  [[ "$(cat "$root/broker.pid" 2>/dev/null)" == "$$" ]] && rm -f "$root/broker.pid"
+  exit 0
+}
+trap quit TERM INT HUP
+last=$SECONDS
+checked=$SECONDS
 while true; do
   shopt -s nullglob
+  active=0
   for ready in "$root/queue"/*.ready; do
+    active=1
     id=$(basename "$ready" .ready)
     rm -f "$ready"
     dir="$root/jobs/$id"
@@ -767,6 +809,31 @@ while true; do
       mv "$dir/rc.tmp" "$dir/rc"
     ) &
   done
+  if [[ "$root/lease" -nt "$root/.seen" ]]; then
+    : > "$root/.seen"
+    active=1
+  fi
+  if [[ "$active" == 1 ]]; then
+    last=$SECONDS
+  elif [[ "$SECONDS" != "$checked" ]]; then
+    checked=$SECONDS
+    [[ -d "$root/queue" ]] || quit
+    if [[ -n "$(jobs -rp)" ]]; then
+      last=$SECONDS
+    elif (( SECONDS - last >= idle )); then
+      # One more look so a command that arrived this second is not dropped.
+      sleep 0.2
+      [[ "$root/lease" -nt "$root/.seen" ]] || set -- "$root/queue"/*.ready
+      if [[ "$root/lease" -nt "$root/.seen" || -e "${1:-}" ]]; then
+        last=$SECONDS
+      else
+        # Nothing is running and nothing is queued: take the directory too.
+        rm -f "$root/broker.pid"
+        rm -rf -- "$root"
+        exit 0
+      fi
+    fi
+  fi
   sleep 0.01
 done
 BROKER
@@ -776,6 +843,7 @@ use POSIX qw(setsid);
 my $script = $ARGV[0];
 my $root = $ARGV[1];
 my $log = $ARGV[2];
+my $idle = defined $ARGV[3] ? $ARGV[3] : "900";
 my $pid = fork();
 die "fork failed\n" unless defined $pid;
 if ($pid) { exit 0; }
@@ -784,7 +852,7 @@ chdir("/");
 open STDIN, "<", "/dev/null";
 open STDOUT, ">>", $log;
 open STDERR, ">>&STDOUT";
-exec "/bin/bash", "--noprofile", "--norc", $script, $root;
+exec "/bin/bash", "--noprofile", "--norc", $script, $root, $idle;
 LAUNCH
 }
 
@@ -811,7 +879,7 @@ ensure_broker() {
     fi
     ssh_quick "if [[ -f $(printf '%q' "$root/broker.pid") ]]; then kill \$(cat $(printf '%q' "$root/broker.pid")) 2>/dev/null || true; fi; rm -rf $(printf '%q' "$root")" || true
     install_broker_files "$root"
-    ssh_quick "perl $(printf '%q' "$root/launch.pl") $(printf '%q' "$root/broker.sh") $(printf '%q' "$root") $(printf '%q' "$root/broker.log")" \
+    ssh_quick "perl $(printf '%q' "$root/launch.pl") $(printf '%q' "$root/broker.sh") $(printf '%q' "$root") $(printf '%q' "$root/broker.log") $(printf '%q' "$RW_BROKER_IDLE")" \
       || { rmdir "$lock" 2>/dev/null || true; die "broker launch failed; command not run locally"; }
     local i
     for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
@@ -858,6 +926,7 @@ broker_round() {
     printf 'dir=%q\n' "$dir"
     printf 'cap=%q\n' "$CAP_DIR"
     printf 'job=%q\n' "$job_id"
+    printf 'if [[ -d "$root/queue" ]]; then : > "$root/lease"; fi\n'
     printf 'if ! kill -0 "$pid" 2>/dev/null; then exit 99; fi\n'
     printf 'umask 077\n'
     printf 'mkdir -p -- "$dir" "$cap" || exit 98\n'
@@ -869,6 +938,7 @@ broker_round() {
     printf 'i=0\n'
     printf 'while [[ ! -f "$dir/rc" ]]; do\n'
     printf '  i=$((i + 1))\n'
+    printf '  if [[ $((i %% 100)) -eq 0 && ! -e "$dir/pid" ]] && ! kill -0 "$pid" 2>/dev/null; then exit 99; fi\n'
     printf '  if [[ $i -gt 9000 ]]; then\n'
     printf '    echo "remote command timed out waiting for the broker" >&2\n'
     printf '    exit 97\n'

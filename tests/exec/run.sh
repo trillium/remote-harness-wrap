@@ -51,9 +51,9 @@ exec_ssh "mkdir -p -- $(printf '%q' "$RW_REMOTE_ROOT/proj")" || {
 ids=()
 if [[ ${#EXEC_REST[@]} -eq 0 ]]; then
   if [[ "$RW_SSH_TARGET" == localhost || "$RW_SSH_TARGET" == 127.0.0.1 ]]; then
-    ids=(1 2 3 5 9 7 8 6 4)
+    ids=(1 2 3 5 9 7 8 6 4 12)
   else
-    ids=(2 3 5 9 7 8 6 4)
+    ids=(2 3 5 9 7 8 6 4 12)
   fi
 else
   for item in "${EXEC_REST[@]}"; do

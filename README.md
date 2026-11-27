@@ -127,3 +127,14 @@ tests/whole/f6.sh --target-a <ssh-host> --target-b <ssh-host>
 Each session gets its own path map, broker directory and ssh control socket.
 The log is `evidence/whole/f6.log`.
 `--harness claude` runs two Claude Code sessions instead, using `RW_TOKEN_FILE`, and writes `evidence/whole/f6-claude.log`.
+
+## Remote broker lifetime
+
+The default transport keeps one detached `broker.sh` on the remote per session, so a `&` job outlives its command.
+The broker leaves when its session does:
+
+- `rw run` gives the run its own broker directory and removes it when the harness exits or `rw run` is terminated. `rw down` removes it after a hard kill.
+- `rw-bash --reap` (with `RW_SSH_TARGET` and `RW_BROKER_ROOT` set) removes a broker and its running jobs on demand.
+- With neither, the broker exits by itself after `RW_BROKER_IDLE` seconds (default 900) with no command and no running job. Every command renews the lease, so a live session keeps it. A background process a command started is not stopped.
+
+The proof is `tests/exec/a12.sh` and `evidence/exec/local-a12.log`.
