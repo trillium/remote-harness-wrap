@@ -1,0 +1,4 @@
+date: 2026-11-27T07:34:42Z
+command: claude -p "say ok"
+output: Claude Code can't use your Claude subscription, usually because a payment is past due · Pay or renew at https://claude.ai/settings/billing (if you just paid, try again shortly), or use an Anthropic API key instead
+result: refused before any tool call; C4 and F6 left partial, no other account tried
