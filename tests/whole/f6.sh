@@ -36,11 +36,14 @@ note() { printf '%s\n' "$*" | tee -a "$LOG"; }
 pass() { PASSES=$((PASSES + 1)); note "PASS: $*"; }
 fail() { FAILS=$((FAILS + 1)); note "FAIL: $*"; }
 
+# shellcheck source=../lib/ssh-inband.sh
+. "$ROOT/tests/lib/ssh-inband.sh"
+
 rssh() { # rssh <target> <control> <command...>
   local t="$1" c="$2"
   shift 2
-  ssh -o ControlMaster=auto -o ControlPersist=10m -o "ControlPath=$c" \
-    -o BatchMode=yes -o ConnectTimeout=8 -o LogLevel=ERROR -T "$t" "$@"
+  rw_ssh_inband ssh -o ControlMaster=auto -o ControlPersist=10m -o "ControlPath=$c" \
+    -o BatchMode=yes -o ConnectTimeout=8 -o LogLevel=ERROR -T "$t" -- "$@"
 }
 
 [[ -n "$TARGET_A" && -n "$TARGET_B" && "$TARGET_A" != "$TARGET_B" ]] || {

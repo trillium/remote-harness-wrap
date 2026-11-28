@@ -2,6 +2,9 @@
 # Shared helpers for file-plane and interception proofs.
 # A test fails by recording FAIL lines and exiting non-zero.
 
+# shellcheck source=ssh-inband.sh
+. "$(dirname "${BASH_SOURCE[0]}")/ssh-inband.sh"
+
 proof_root() {
   cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
 }
@@ -18,7 +21,7 @@ proof_label() {
 }
 
 proof_ssh() {
-  ssh \
+  rw_ssh_inband ssh \
     -o ControlMaster=auto \
     -o "ControlPersist=${RW_CONTROL_PERSIST:-5m}" \
     -o "ControlPath=${RW_CONTROL_PATH:-/tmp/rw-bd-%C}" \
@@ -27,7 +30,7 @@ proof_ssh() {
     -o LogLevel=ERROR \
     -T \
     "$RW_SSH_TARGET" \
-    "$@"
+    -- "$@"
 }
 
 proof_ssh_exit() {

@@ -140,6 +140,7 @@ b7_probe_listener() {
   rm -f "$key"
   ssh-keygen -t ed25519 -N "" -q -f "$key" </dev/null
   verb2=$(mktemp "${RW_RAW}/b7-second.XXXXXX")
+  # rw-raw-ssh-rc-ok: login probe running `true`; the status is the login result (255 on refusal), not a remote command's status
   second_rc=0
   SSH_AUTH_SOCK='' ssh -F /dev/null \
     -i "$key" \

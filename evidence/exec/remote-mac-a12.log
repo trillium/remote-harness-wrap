@@ -1,0 +1,20 @@
+id: a12
+label: remote-mac
+when: 2026-11-28T09:44:55Z
+passes: 12
+fails: 0
+clean: broker is running right after the command (expected, the next command reuses it)
+PASS: clean: broker exited on its own after 3s idle
+PASS: clean: the idle exit also removed the broker directory
+sigterm: broker survived the wrapper's SIGTERM (expected, one command is not the session)
+PASS: sigterm: broker exited on its own after the wrapper was terminated
+PASS: sigkill: broker stayed while the job it started was still running
+PASS: sigkill: broker exited on its own after the wrapper was killed
+PASS: live: broker and background job both stayed through 8s of commands (idle limit 3s)
+PASS: live: after the last command the broker exited on its own
+PASS: live: the background process itself was not killed by the broker exiting
+PASS: reap: --reap stopped the broker and its running job and removed the directory
+PASS: run: rw run removed its broker when the harness exited
+PASS: run: rw run removed its broker when it was terminated
+run: broker survived the SIGKILL of rw run (expected, nothing could clean up)
+PASS: run: rw down removed the broker of a killed rw run

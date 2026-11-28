@@ -1,0 +1,15 @@
+id: broker-count
+label: remote-mac
+when: 2026-11-28T09:43:19Z
+passes: 2
+fails: 0
+before: broker shells on the remote, all sessions: 4
+run: rw run exited 0; broker root recorded: yes
+run: the wrapped command ran on the remote
+after run, before down: shells under this run's broker directory: 0
+down: rw down exited 0
+after: shells under this run's broker directory: 0
+after: broker shells on the remote, all sessions: 4
+after: this run's broker directory: gone
+PASS: this run left no broker shell and no broker directory (0 before down, 0 after)
+PASS: total broker shells did not grow (4 before, 4 after)
