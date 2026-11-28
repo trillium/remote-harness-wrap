@@ -84,6 +84,7 @@ Host probe
   BatchMode yes
 EOF
   nokey_out=$(mktemp "${TMPDIR:-/tmp}/rw-e5-nokey.XXXXXX")
+  # rw-raw-ssh-rc-ok: login probe running `true`; the status is the login result (255 on refusal), not a remote command's status
   SSH_AUTH_SOCK='' ssh -v -F "$nokey_cfg" -o ConnectTimeout=8 -T probe 'printf NOKEY_SESSION\n' >"$nokey_out" 2>"${RW_RAW}/e5-nokey.err"
   nokey_rc=$?
   rm -f "$nokey_cfg"

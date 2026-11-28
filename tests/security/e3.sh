@@ -31,6 +31,7 @@ Host *
   BatchMode no
 EOF
 err=$(mktemp "${TMPDIR:-/tmp}/rw-e3-err.XXXXXX")
+# rw-raw-ssh-rc-ok: login probe running `true`; the status is the login result (255 on refusal), not a remote command's status
 SSH_AUTH_SOCK='' SSH_ASKPASS="$ask" SSH_ASKPASS_REQUIRE=force DISPLAY=dummy \
   ssh -F "$cfg" -v -o ConnectTimeout=8 -T "$RW_SSH_TARGET" 'printf SHOULD_NOT_RUN\n' \
   >"${RW_RAW}/e3-out.txt" 2>"$err"

@@ -995,6 +995,13 @@ PERL
     die "remote command did not finish (ssh status ${wrc}); command not run locally"
   fi
 
+  # A finished round always writes a frame. Some ssh servers (Tailscale SSH)
+  # report 0 for every command, so an exit 99 from the remote arrives as 0
+  # with no frame. Treat that like the stale-pid signal so the caller retries.
+  if [[ ! -s "$frame" ]]; then
+    return 99
+  fi
+
   local out err rc
   out=$(mktemp "${TMPDIR:-/tmp}/rw-out.XXXXXX")
   err=$(mktemp "${TMPDIR:-/tmp}/rw-err.XXXXXX")

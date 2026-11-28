@@ -17,15 +17,20 @@ exec_label() {
   esac
 }
 
+# shellcheck source=../lib/ssh-inband.sh
+. "$(dirname "${BASH_SOURCE[0]}")/../lib/ssh-inband.sh"
+
+# The remote command's exit status comes back in-band (see ssh-inband.sh):
+# some ssh servers always report 0.
 exec_ssh() {
-  ssh \
+  rw_ssh_inband ssh \
     -o ControlMaster=auto \
     -o "ControlPersist=${RW_CONTROL_PERSIST:-30m}" \
     -o "ControlPath=${RW_CONTROL_PATH:-/tmp/rw-exec-%C}" \
     -o BatchMode=yes \
     -o "ConnectTimeout=${RW_CONNECT_TIMEOUT:-8}" \
     -o LogLevel=ERROR \
-    -T "$RW_SSH_TARGET" "$@"
+    -T "$RW_SSH_TARGET" -- "$@"
 }
 
 exec_parse_args() {

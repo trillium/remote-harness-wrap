@@ -1,0 +1,48 @@
+== ssh-inband-test (fake ssh that always exits 0) ==
+PASS: exec_ssh: a trailing comment does not eat the status
+PASS: a session that never ran the command is not reported as success
+PASS: lint: proof_ssh calls rw_ssh_inband
+PASS: lint: exec_ssh calls rw_ssh_inband
+PASS: lint: no unmarked raw ssh call has its status read
+PASS: lint: a planted raw-ssh status check is caught
+passes: 26
+fails: 0
+
+== broker-count on the Mac remote ==
+id: broker-count
+label: remote-mac
+when: 2026-11-28T09:43:19Z
+passes: 2
+fails: 0
+before: broker shells on the remote, all sessions: 4
+run: rw run exited 0; broker root recorded: yes
+run: the wrapped command ran on the remote
+after run, before down: shells under this run's broker directory: 0
+down: rw down exited 0
+after: shells under this run's broker directory: 0
+after: broker shells on the remote, all sessions: 4
+after: this run's broker directory: gone
+PASS: this run left no broker shell and no broker directory (0 before down, 0 after)
+PASS: total broker shells did not grow (4 before, 4 after)
+
+== A12 on the Mac remote ==
+id: a12
+label: remote-mac
+when: 2026-11-28T09:44:55Z
+passes: 12
+fails: 0
+clean: broker is running right after the command (expected, the next command reuses it)
+PASS: clean: broker exited on its own after 3s idle
+PASS: clean: the idle exit also removed the broker directory
+sigterm: broker survived the wrapper's SIGTERM (expected, one command is not the session)
+PASS: sigterm: broker exited on its own after the wrapper was terminated
+PASS: sigkill: broker stayed while the job it started was still running
+PASS: sigkill: broker exited on its own after the wrapper was killed
+PASS: live: broker and background job both stayed through 8s of commands (idle limit 3s)
+PASS: live: after the last command the broker exited on its own
+PASS: live: the background process itself was not killed by the broker exiting
+PASS: reap: --reap stopped the broker and its running job and removed the directory
+PASS: run: rw run removed its broker when the harness exited
+PASS: run: rw run removed its broker when it was terminated
+run: broker survived the SIGKILL of rw run (expected, nothing could clean up)
+PASS: run: rw down removed the broker of a killed rw run
